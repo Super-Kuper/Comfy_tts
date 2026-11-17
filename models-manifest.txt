@@ -1,0 +1,46 @@
+# Model manifest for the video_gen TTS serverless worker (Qwen3-TTS + GigaAM-v3).
+#
+# Format (tab-separated):
+#   <path under MODELS_ROOT>\t<URL>\t<sha256>\t<version>\t<license>\t<role>
+#
+# role: engine   — the TTS weights whose sha256 becomes telemetry.model_hash and
+#                  whose license becomes telemetry.license (exactly one row);
+#       aligner  — the GigaAM-v3 weights that power words/WER (exactly one row);
+#       support  — config/tokenizer support files of either model (0..n rows).
+#
+# Consumed by populate-volume.sh (or by the service's runpod.provision): files
+# land in <MODELS_ROOT>/<path>, e.g. /runpod-volume/models/qwen3-tts-1.7b/model.safetensors.
+# Every URL is pinned to an immutable Hugging Face commit revision (LFS oid =
+# sha256); `main` is forbidden and populate-volume.sh rejects non-pinned URLs.
+# Weights are never baked into the image or committed to git (see .gitignore).
+#
+# Volume budget: Qwen3-TTS 1.7B ~3.86 GB + speech tokenizer ~0.68 GB,
+# GigaAM-v3 ~0.45 GB, tokenizers/configs ~0.03 GB → ~5.1 GB; attach at least
+# 15 GB (ComfyUI-free image, outputs/temp and future voices need headroom).
+#
+# Chatterbox (if the pilot ever asks for it) is a SEPARATE image/stand with its
+# own manifest, not a row here: one worker = one engine (contract §1.1).
+
+# ── Qwen3-TTS 1.7B Base (Apache-2.0) ─────────────────────────────────────────
+# Repo: https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base @ fd4b2543
+# Native 24 kHz, RU in 10 languages, no native word timings → GigaAM aligner below.
+qwen3-tts-1.7b/model.safetensors	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base/resolve/fd4b254389122332181a7c3db7f27e918eec64e3/model.safetensors	38fc7fc51c5e776e840414b6fd443962e9411b9654888fd7913e4da643cb857c	qwen3-tts-12hz-1.7b@2026-01	Apache-2.0	engine
+qwen3-tts-1.7b/speech_tokenizer/model.safetensors	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base/resolve/fd4b254389122332181a7c3db7f27e918eec64e3/speech_tokenizer/model.safetensors	836b7b357f5ea43e889936a3709af68dfe3751881acefe4ecf0dbd30ba571258	qwen3-tts-12hz-1.7b@2026-01	Apache-2.0	support
+qwen3-tts-1.7b/config.json	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base/resolve/fd4b254389122332181a7c3db7f27e918eec64e3/config.json	b4f01752d15a488abde3e1ab44723ae4f4b9e68a4037257b098b3737893cc1f9	qwen3-tts-12hz-1.7b@2026-01	Apache-2.0	support
+qwen3-tts-1.7b/generation_config.json	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base/resolve/fd4b254389122332181a7c3db7f27e918eec64e3/generation_config.json	f1b90b4513f3b34c62851049e2492d7b4c5940daf1276f89c82b8ef04127f3aa	qwen3-tts-12hz-1.7b@2026-01	Apache-2.0	support
+qwen3-tts-1.7b/preprocessor_config.json	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base/resolve/fd4b254389122332181a7c3db7f27e918eec64e3/preprocessor_config.json	efdde1022ea9d76928bf7a9cd53139138f5ba2e466e837f08f6105ab1af1c119	qwen3-tts-12hz-1.7b@2026-01	Apache-2.0	support
+qwen3-tts-1.7b/tokenizer_config.json	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base/resolve/fd4b254389122332181a7c3db7f27e918eec64e3/tokenizer_config.json	dc3c31c3bdaedd5016382bb3cbe07323026775ad51f5a4fb564505992ae4a670	qwen3-tts-12hz-1.7b@2026-01	Apache-2.0	support
+qwen3-tts-1.7b/merges.txt	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base/resolve/fd4b254389122332181a7c3db7f27e918eec64e3/merges.txt	599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3	qwen3-tts-12hz-1.7b@2026-01	Apache-2.0	support
+qwen3-tts-1.7b/vocab.json	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base/resolve/fd4b254389122332181a7c3db7f27e918eec64e3/vocab.json	ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910	qwen3-tts-12hz-1.7b@2026-01	Apache-2.0	support
+qwen3-tts-1.7b/speech_tokenizer/config.json	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base/resolve/fd4b254389122332181a7c3db7f27e918eec64e3/speech_tokenizer/config.json	ee65bb901c876664ab8707c487157aa1a6ee57c65969b28fb5ec9dc211e68167	qwen3-tts-12hz-1.7b@2026-01	Apache-2.0	support
+qwen3-tts-1.7b/speech_tokenizer/configuration.json	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base/resolve/fd4b254389122332181a7c3db7f27e918eec64e3/speech_tokenizer/configuration.json	6bc26d64eb5024b4d1dab5a52371958b429256d6c9d59787f1f5294a54e0cebd	qwen3-tts-12hz-1.7b@2026-01	Apache-2.0	support
+qwen3-tts-1.7b/speech_tokenizer/preprocessor_config.json	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base/resolve/fd4b254389122332181a7c3db7f27e918eec64e3/speech_tokenizer/preprocessor_config.json	fcb3805e597e786d4067706e602f6688524640f8d3396790e2e09b5942fcbdfb	qwen3-tts-12hz-1.7b@2026-01	Apache-2.0	support
+
+# ── GigaAM-v3 (MIT) — aligner / words / WER ──────────────────────────────────
+# Repo: https://huggingface.co/ai-sage/GigaAM-v3 @ ec1dc1f0
+# ASR model: runs on the synthesized take, produces word timings and WER;
+# the TTS model has no native word timings (proposal tts-ru.md "Тайминги").
+gigaam-v3/pytorch_model.bin	https://huggingface.co/ai-sage/GigaAM-v3/resolve/ec1dc1f01d0d627ab2c0d3acc1e235702300d95e/pytorch_model.bin	afc6dcbae8320ea56f2cddebc0f13fbf62c9d59b6ddcad899782623c8610826a	gigaam-v3@2026-04	MIT	aligner
+gigaam-v3/tokenizer.model	https://huggingface.co/ai-sage/GigaAM-v3/resolve/ec1dc1f01d0d627ab2c0d3acc1e235702300d95e/tokenizer.model	828c12c991019eef952a960661f25a92d6ad279591e2ea466b4aeddf1d20a18a	gigaam-v3@2026-04	MIT	support
+gigaam-v3/config.json	https://huggingface.co/ai-sage/GigaAM-v3/resolve/ec1dc1f01d0d627ab2c0d3acc1e235702300d95e/config.json	02361ba9cafd6c3ec66fcdd73494c3b562a60eb2a2d1b13f3cb04ae440d93e52	gigaam-v3@2026-04	MIT	support
+gigaam-v3/modeling_gigaam.py	https://huggingface.co/ai-sage/GigaAM-v3/resolve/ec1dc1f01d0d627ab2c0d3acc1e235702300d95e/modeling_gigaam.py	269be43b635b1e510115baa2a843c5cbaa052e8adf0be30dc133a2ba5b5f2d86	gigaam-v3@2026-04	MIT	support
