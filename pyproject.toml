@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tts-serverless-worker"
+version = "0.1.0"
+description = "RunPod serverless worker for Russian TTS (Qwen3-TTS 1.7B) with GigaAM-v3 word timestamps/WER — contract tts-serverless/v1"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "video_gen tts serverless worker" }]
+keywords = ["runpod", "serverless", "tts", "qwen3-tts", "gigaam", "russian", "voiceover"]
+classifiers = [
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+]
+
+# The live engine/aligner use torch and their model packages (TODO(live), pinned
+# in the image); tests inject fakes, so only the contract/HTTP/S3 deps are here.
+dependencies = [
+    "httpx>=0.27,<0.29",
+    "jsonschema>=4.21",
+    "runpod==2.2.1",
+    "boto3>=1.35",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.5",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "tests"]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
