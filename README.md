@@ -37,9 +37,12 @@ engine (contract §1.1), no routing in a single worker and no silent fallback.
    torch + Qwen3-TTS/GigaAM runtime packages (TODO(live) in the
    [Dockerfile](Dockerfile)); the image carries no weights.
 4. **Publish on RunPod Hub (optional).** The Hub listing metadata is
-   [`.runpod/hub.json`](.runpod/hub.json) (GPU pool `ADA_24,AMPERE_48`,
-   CUDA 12.8–13.0, 25 GB container disk, endpoint env vars) and the build test
-   is [`.runpod/tests.json`](.runpod/tests.json) — it runs the health action.
+   [`.runpod/hub.json`](.runpod/hub.json) (GPU pools `ADA_24,AMPERE_24,AMPERE_48`,
+   host CUDA `13.2`/`13.0`/`12.6`/`12.4` — the test image carries no CUDA, so
+   only versions present in the RunPod inventory are listed; 25 GB container
+   disk, endpoint env vars) and the build test
+   is [`.runpod/tests.json`](.runpod/tests.json) — it runs the health action on a
+   stock-bearing NVIDIA GeForce RTX 4090 with CUDA 13.2.
 5. **Create the serverless endpoint** for the `tts` stand: endpoint type
    `QUEUE`, **`workers.max = 1`**, idle timeout 60–120 s, FlashBoot, endpoint
    timeout ≥ `policy.executionTimeout`. TTS batch = all phrase jobs of one

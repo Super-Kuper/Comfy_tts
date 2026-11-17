@@ -7,11 +7,12 @@
     "runsOn": "GPU",
     "containerDiskInGb": 25,
     "gpuCount": 1,
-    "gpuIds": "ADA_24,AMPERE_48",
+    "gpuIds": "ADA_24,AMPERE_24,AMPERE_48",
     "allowedCudaVersions": [
-      "12.8",
-      "12.9",
-      "13.0"
+      "13.2",
+      "13.0",
+      "12.6",
+      "12.4"
     ],
     "env": [
       {
@@ -80,6 +81,6 @@
       }
     ]
   },
-  "version": "v0.2.0",
-  "changelog": "## v0.2.0\n\n- RunPod Hub listing metadata (`.runpod/hub.json`) and the build test (`.runpod/tests.json`, `action=health`).\n- Health action (contract §3): `action: health` returns `{status, volume_mounted, engine, aligner}`. It only checks that the network volume is mounted and that the pinned engine/aligner files are present on it — no synthesis, no alignment, no weight hashing. Statuses `ok`/`starting`/`degraded` (volume mounted and models present / volume mounted but files still being populated / no volume).\n- Input schema allows `action: health` without the phrase fields (additive within `tts-serverless/v1`); health contract examples and tests added.\n- Version `0.2.0` (package, Dockerfile, Hub metadata); README documents the health action and Hub publishing.\n- Unchanged: the generation contract `tts-serverless/v1`, telemetry facts, the pinned manifest and the normalization data. Engine/aligner live wiring and the CUDA image base remain `TODO(live)`.\n\n## v0.1.0\n\n- Initial release: contract `tts-serverless/v1` (one Russian phrase → 1–2 takes), Qwen3-TTS 1.7B Base + GigaAM-v3 build scaffold, pinned volume manifest + `populate-volume.sh`, normalization data, 123 GPU-free tests.\n"
+  "version": "v0.2.1",
+  "changelog": "## v0.2.1\n\n- Hub build fix: the build test requested `12.8/12.9/13.0` and `gpuTypeId=NVIDIA L4`, but the L4 pool has no stock and the real host inventory (`GET /v2/catalog/gpus`) only has `13.2`, `13.0`, `12.6`, `12.4` — the test pod failed with `All returned supply constraints`. The test now uses a stock-bearing NVIDIA GeForce RTX 4090 (CUDA 13.2) and only real CUDA versions; listing pools widened to `ADA_24,AMPERE_24,AMPERE_48`.\n- Unchanged: contract `tts-serverless/v1`, handler, tests, manifest and the CPU-only test image (no CUDA in the image). Engine/aligner live wiring stays `TODO(live)`.\n\n## v0.2.0\n\n- RunPod Hub listing metadata (`.runpod/hub.json`) and the build test (`.runpod/tests.json`, `action=health`).\n- Health action (contract §3): `action: health` returns `{status, volume_mounted, engine, aligner}`. It only checks that the network volume is mounted and that the pinned engine/aligner files are present on it — no synthesis, no alignment, no weight hashing. Statuses `ok`/`starting`/`degraded` (volume mounted and models present / volume mounted but files still being populated / no volume).\n- Input schema allows `action: health` without the phrase fields (additive within `tts-serverless/v1`); health contract examples and tests added.\n- Version `0.2.0` (package, Dockerfile, Hub metadata); README documents the health action and Hub publishing.\n- Unchanged: the generation contract `tts-serverless/v1`, telemetry facts, the pinned manifest and the normalization data. Engine/aligner live wiring and the CUDA image base remain `TODO(live)`.\n\n## v0.1.0\n\n- Initial release: contract `tts-serverless/v1` (one Russian phrase → 1–2 takes), Qwen3-TTS 1.7B Base + GigaAM-v3 build scaffold, pinned volume manifest + `populate-volume.sh`, normalization data, 123 GPU-free tests.\n"
 }
