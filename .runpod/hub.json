@@ -1,0 +1,85 @@
+{
+  "title": "TTS Serverless — Qwen3-TTS 1.7B + GigaAM-v3 (Russian voiceover)",
+  "description": "RunPod serverless worker for the video_gen tts stand: one Russian phrase becomes 1–2 takes with the pinned Qwen3-TTS 1.7B Base model, with word timestamps and WER from GigaAM-v3. The worker never chooses a model (the model is the image and the attached network volume), ships no weights (pinned manifest, sha256 verified by populate-volume.sh) and returns the takes plus execution-fact telemetry (engine, engine version, aligner version, model hash, GPU seconds, license).",
+  "type": "serverless",
+  "category": "audio",
+  "config": {
+    "runsOn": "GPU",
+    "containerDiskInGb": 25,
+    "gpuCount": 1,
+    "gpuIds": "ADA_24,AMPERE_48",
+    "allowedCudaVersions": [
+      "12.8",
+      "12.9",
+      "13.0"
+    ],
+    "env": [
+      {
+        "key": "JOB_TIMEOUT_SECONDS",
+        "input": {
+          "name": "Job timeout (seconds)",
+          "type": "number",
+          "description": "Maximum time a single phrase job (synthesis + alignment) may run. Must be less than or equal to the endpoint timeout.",
+          "min": 30,
+          "max": 900,
+          "default": 120,
+          "advanced": true
+        }
+      },
+      {
+        "key": "TTS_MAX_TEXT_CHARS",
+        "input": {
+          "name": "Max phrase length (characters)",
+          "type": "number",
+          "description": "Input phrase cap; longer text fails with input_invalid.",
+          "min": 1,
+          "max": 5000,
+          "default": 1000,
+          "advanced": true
+        }
+      },
+      {
+        "key": "S3_ENDPOINT",
+        "input": {
+          "name": "S3 endpoint",
+          "type": "string",
+          "description": "Optional S3/MinIO endpoint. Configure S3_* to return large takes as a presigned audio_url instead of inline base64.",
+          "default": "",
+          "advanced": true
+        }
+      },
+      {
+        "key": "S3_ACCESS_KEY",
+        "input": {
+          "name": "S3 access key",
+          "type": "string",
+          "description": "S3/MinIO access key (secret — endpoint env only).",
+          "default": "",
+          "advanced": true
+        }
+      },
+      {
+        "key": "S3_SECRET_KEY",
+        "input": {
+          "name": "S3 secret key",
+          "type": "string",
+          "description": "S3/MinIO secret key (secret — endpoint env only).",
+          "default": "",
+          "advanced": true
+        }
+      },
+      {
+        "key": "S3_BUCKET",
+        "input": {
+          "name": "S3 bucket",
+          "type": "string",
+          "description": "Bucket for large take output (alias: OUTPUT_BUCKET).",
+          "default": "",
+          "advanced": true
+        }
+      }
+    ]
+  },
+  "version": "v0.2.0",
+  "changelog": "## v0.2.0\n\n- RunPod Hub listing metadata (`.runpod/hub.json`) and the build test (`.runpod/tests.json`, `action=health`).\n- Health action (contract §3): `action: health` returns `{status, volume_mounted, engine, aligner}`. It only checks that the network volume is mounted and that the pinned engine/aligner files are present on it — no synthesis, no alignment, no weight hashing. Statuses `ok`/`starting`/`degraded` (volume mounted and models present / volume mounted but files still being populated / no volume).\n- Input schema allows `action: health` without the phrase fields (additive within `tts-serverless/v1`); health contract examples and tests added.\n- Version `0.2.0` (package, Dockerfile, Hub metadata); README documents the health action and Hub publishing.\n- Unchanged: the generation contract `tts-serverless/v1`, telemetry facts, the pinned manifest and the normalization data. Engine/aligner live wiring and the CUDA image base remain `TODO(live)`.\n\n## v0.1.0\n\n- Initial release: contract `tts-serverless/v1` (one Russian phrase → 1–2 takes), Qwen3-TTS 1.7B Base + GigaAM-v3 build scaffold, pinned volume manifest + `populate-volume.sh`, normalization data, 123 GPU-free tests.\n"
+}

@@ -1,0 +1,21 @@
+{
+  "tests": [
+    {
+      "name": "health_check",
+      "input": {
+        "action": "health"
+      },
+      "timeout": 900000
+    }
+  ],
+  "config": {
+    "gpuTypeId": "NVIDIA L4",
+    "gpuCount": 1,
+    "env": [],
+    "allowedCudaVersions": [
+      "12.8",
+      "12.9",
+      "13.0"
+    ]
+  }
+}
