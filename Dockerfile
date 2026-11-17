@@ -21,16 +21,15 @@
 # exposed.
 # =============================================================================
 
-# Pinned RunPod PyTorch runtime (CUDA 12.8, torch 2.9.1). A RunPod base is
-# used on purpose: Hub GitHub builds pull it from the same registry/cache as
-# other RunPod workers and it is much less likely to hit Docker Hub limits than
-# the generic pytorch/pytorch image. Host CUDA must be >= 12.8 (Hub listing
-# allows 13.2/13.0).
-ARG BASE_IMAGE=runpod/pytorch:2.2.0-rc.229-cu1281-torch291-ubuntu2404
+# Pinned PyTorch runtime (CUDA 12.8, torch 2.7.1, cuDNN 9). Host CUDA must be
+# >= 12.8 (Hub listing allows 13.2/13.0). The runpod/pytorch base was tried in
+# v0.3.1 but is ~7.9 GB compressed vs ~4.2 GB for this image; Hub builds pull
+# it on every fresh build, so the larger base is not used.
+ARG BASE_IMAGE=pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
 
 FROM ${BASE_IMAGE}
 
-ARG TTS_WORKER_VERSION=0.3.2
+ARG TTS_WORKER_VERSION=0.3.3
 # auto: install the Qwen3-TTS runtime only when the base image already carries
 # torch (the real CUDA image). 1/0 force it. The python:3.12-slim stub keeps
 # `auto` -> 0, so the structural build stays fast and GPU-free.
@@ -79,7 +78,7 @@ RUN set -eux; \
             "numpy>=1.26,<3" "soundfile==0.13.1" "librosa==0.11.0"; \
         "${py}" -m pip install --no-cache-dir --no-deps "qwen-tts==0.1.1"; \
         if ! "${py}" -c "import torchaudio" >/dev/null 2>&1; then \
-            "${py}" -m pip install --no-cache-dir --no-deps "torchaudio==2.9.1"; \
+            "${py}" -m pip install --no-cache-dir --no-deps "torchaudio==2.7.1"; \
         fi; \
         "${py}" -c "import librosa, soundfile, transformers; from qwen_tts import Qwen3TTSModel; print('model runtime ok')"; \
     else \

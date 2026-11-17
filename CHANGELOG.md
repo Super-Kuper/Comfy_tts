@@ -4,6 +4,20 @@
 [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии —
 [SemVer](https://semver.org/lang/ru/).
 
+## [0.3.3] — 2026-11-17
+
+Уменьшен образ: возвращена база `pytorch/pytorch`.
+
+### Исправлено
+
+- `runpod/pytorch` база v0.3.1 весит ~7.9 ГБ сжатой и тянет лишние слои;
+  Hub-билд тратит на её pull больше 30-минутного лимита. Возвращена
+  `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime` (~4.2 ГБ сжатой).
+- `torchaudio` fallback — `2.7.1` под torch базы (а не 2.9.1).
+- Сохранён фикс v0.3.2: `cryptography`/`runpod` ставятся с `--ignore-installed`,
+  чтобы не удалять Debian-пакет без RECORD.
+- Версия `0.3.3`; контракт, handler, движок и тесты не менялись.
+
 ## [0.3.2] — 2026-11-17
 
 Исправлен Hub-билд: Debian `cryptography` без RECORD.
