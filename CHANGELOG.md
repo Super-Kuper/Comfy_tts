@@ -4,6 +4,33 @@
 [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии —
 [SemVer](https://semver.org/lang/ru/).
 
+## [0.2.0] — 2026-11-17
+
+Релиз для публикации на RunPod Hub: метаданные листинга и build-тест, плюс
+health-проверка без синтеза.
+
+### Добавлено
+
+- **RunPod Hub** (`.runpod/hub.json`, `.runpod/tests.json`): листинг (GPU-пул
+  `ADA_24,AMPERE_48`, CUDA 12.8–13.0, 25 GB container disk, env-переменные) и
+  build-тест `action=health`.
+- **Health** (`src/tts_worker/health.py`, contract §3): вход
+  `{"action": "health"}` → `{status, volume_mounted, engine, aligner}`.
+  Проверяются только смонтированный том и наличие pinned-файлов engine/aligner
+  на нём (без хеширования, синтеза и выравнивания); статусы
+  `ok`/`starting`/`degraded`.
+- **Схема входа** допускает `action: health` без текста/голоса/рендера
+  (аддитивно в `tts-serverless/v1`); примеры `health.request.json`/
+  `health.response.json`, health-тесты и contract-тесты на health.
+- Версия `0.2.0` (pyproject, Dockerfile, `__version__`, Hub-метаданные);
+  README — раздел Health и шаг публикации через Hub.
+
+### Не менялось
+
+- Контракт генерации `tts-serverless/v1`, телеметрия, pinned-манифест и данные
+  нормализации. Живой движок/выравнивание и CUDA-база образа — прежние
+  live-шаги (`TODO(live)`).
+
 ## [0.1.0] — 2026-11-17
 
 Первый релиз: контракт `tts-serverless/v1` (одна фраза → 1–2 дубля), сборка
