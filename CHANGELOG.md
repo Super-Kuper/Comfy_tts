@@ -4,6 +4,30 @@
 [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии —
 [SemVer](https://semver.org/lang/ru/).
 
+## [0.2.2] — 2026-11-17
+
+Живой entrypoint: авто-популяция тома перед handler.
+
+### Добавлено
+
+- **`docker/entrypoint.sh`:** при `VOLUME_AUTOPOPULATE=true` (по умолчанию)
+  запускает `populate-volume.sh` (pinned sha256 из `models-manifest.txt`), затем
+  `exec handler`; `VOLUME_AUTOPOPULATE=false` — только ручной populate. Ошибка
+  скачивания не валит контейнер: health остаётся доступным, job падает видимым
+  `model_file_missing`.
+- Hub env: `VOLUME_AUTOPOPULATE` (default `true`).
+
+### Изменено
+
+- Dockerfile: ENV `TTS_WORKER_DIR`/`VOLUME_AUTOPOPULATE`, `ENTRYPOINT` —
+  `docker/entrypoint.sh` (прежний `python handler.py` убран).
+
+### Проверка
+
+`pytest` — 130 passed; `shellcheck` — только прежние SC2034 в
+`populate-volume.sh`; stub-сборка и smoke-entrypoint зелёные. Живой синтез не
+проверялся: движок/aligner всё ещё `TODO(live)`.
+
 ## [0.2.1] — 2026-11-17
 
 Исправлен Hub-билд: test pod просил CUDA-версии и GPU, которых нет в наличии.

@@ -14,8 +14,9 @@
 #
 # TODO(live): re-pin BASE_IMAGE to a CUDA runtime image (e.g. nvidia/cuda
 # 12.8 runtime by digest) and install pinned torch + the Qwen3-TTS and GigaAM
-# runtime packages; warm-load both models in an entrypoint before the handler
-# (cold start 3–10 min on the stand, amortized by the phrase batch — plan §7.2).
+# runtime packages; warm-load both models before the handler (cold start
+# 3–10 min on the stand, amortized by the phrase batch — plan §7.2). Volumes
+# already auto-populate in docker/entrypoint.sh (VOLUME_AUTOPOPULATE=true).
 #
 # Boundaries: no secrets/tokens/weights in the image; ComfyUI is not used here;
 # only the RunPod handler is exposed.
@@ -25,17 +26,21 @@ ARG BASE_IMAGE=python:3.12-slim
 
 FROM ${BASE_IMAGE}
 
-ARG TTS_WORKER_VERSION=0.2.1
+ARG TTS_WORKER_VERSION=0.2.2
 
+# VOLUME_AUTOPOPULATE=true — автоскачивание pinned-весов Qwen3-TTS/GigaAM на
+# том при старте (docker/entrypoint.sh); false — только ручной populate.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     TERM=xterm \
+    TTS_WORKER_DIR=/opt/tts-worker \
     VOLUME_ROOT=/runpod-volume \
     MODELS_ROOT=/runpod-volume/models \
     MODELS_MANIFEST=/opt/tts-worker/models-manifest.txt \
     TTS_DICTIONARIES=/opt/tts-worker/data/normalization.ru.json \
     TTS_DEVICE=cuda \
+    VOLUME_AUTOPOPULATE=true \
     PYTHONPATH=/opt/tts-worker/src
 
 RUN set -eux; \
@@ -59,11 +64,12 @@ COPY contract/ /opt/tts-worker/contract/
 COPY data/ /opt/tts-worker/data/
 COPY models-manifest.txt /opt/tts-worker/models-manifest.txt
 COPY populate-volume.sh /opt/tts-worker/populate-volume.sh
+COPY docker/entrypoint.sh /opt/tts-worker/entrypoint.sh
 
-RUN chmod 0755 /opt/tts-worker/populate-volume.sh
+RUN chmod 0755 /opt/tts-worker/populate-volume.sh /opt/tts-worker/entrypoint.sh
 
-# TODO(live): entrypoint that (1) downloads/verifies missing pinned weights,
-# (2) warm-loads Qwen3-TTS + GigaAM (или валидирует том), (3) starts this
-# handler. Until then the handler starts and returns a visible
-# `engine_unavailable` for real synthesis jobs — no silent fallback.
-ENTRYPOINT ["python", "/opt/tts-worker/handler.py"]
+# Entrypoint: авто-популяция тома (VOLUME_AUTOPOPULATE=true) → handler.
+# Warm-load Qwen3-TTS/GigaAM остаётся шагом живого движка (TODO(live) в
+# src/tts_worker/engine.py/aligner.py): до него handler отвечает видимым
+# `engine_unavailable`, а не тихим фолбэком.
+ENTRYPOINT ["/opt/tts-worker/entrypoint.sh"]

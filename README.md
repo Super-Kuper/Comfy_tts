@@ -28,11 +28,13 @@ engine (contract §1.1), no routing in a single worker and no silent fallback.
 1. **Storage first.** Create a network volume (≥ 15 GB) in a datacenter that
    offers 24 GB GPUs (L4, A5000, RTX 3090/4090, A6000). The pinned set is
    ~5.1 GB; outputs/temp and future voices need headroom.
-2. **Populate the volume before traffic.** Run
+2. **Volume auto-populates on first boot.** `docker/entrypoint.sh` runs
    [`populate-volume.sh`](populate-volume.sh) with
-   `MODELS_ROOT=/runpod-volume/models` (or set `VOLUME_AUTOPOPULATE=true` once
-   the image entrypoint lands). The script refuses non-pinned URLs and verifies
-   every sha256; a mismatch fails before the GPU is started.
+   `VOLUME_AUTOPOPULATE=true` (default): missing files from
+   `models-manifest.txt` are downloaded to `/runpod-volume/models` and every
+   sha256 is verified; unpinned URLs/`main` are refused before GPU work. Set
+   `VOLUME_AUTOPOPULATE=false` to prepare the volume manually from a CPU pod
+   (`MODELS_ROOT=/runpod-volume/models ./populate-volume.sh`).
 3. **Build and push the image.** Requires a CUDA runtime base with pinned
    torch + Qwen3-TTS/GigaAM runtime packages (TODO(live) in the
    [Dockerfile](Dockerfile)); the image carries no weights.
@@ -147,8 +149,10 @@ covered too. Local test deps: `pytest`, `jsonschema` (see `pyproject.toml`).
    24 kHz → `render.sample_rate`, WAV PCM) and GigaAM-v3 ASR/CTC forced
    alignment → `words` + `wer`. Until then a real job fails visibly with
    `engine_unavailable`/`aligner_unavailable` — no silent fallback.
-2. **Warm load at startup** (both models, 3–10 min cold start) and the image
-   entrypoint/GPU base with pinned torch + model packages.
+2. **Warm load at startup** (both models, 3–10 min cold start) and the GPU
+   base with pinned torch + model packages. Volume auto-population and the
+   entrypoint are implemented in this repository (`docker/entrypoint.sh`), but
+   the image still needs the CUDA runtime layer before it can synthesize.
 3. **Single source for normalization data:** this repository pins
    `data/normalization.ru.json`; the service plan §10 puts the dictionary data in
    `shared/seeds/tts_dictionaries.json`. Export one pinned version from that
