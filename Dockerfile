@@ -1,32 +1,37 @@
 # =============================================================================
 # TTS serverless worker — RunPod serverless (contract tts-serverless/v1).
 #
-# Model stack: Qwen3-TTS 1.7B Base (Apache-2.0) + GigaAM-v3 (MIT) aligner.
-# Weights are NOT in the image: they live on the network volume at
+# Model stack: Qwen3-TTS 1.7B Base (Apache-2.0) voice cloning + GigaAM-v3 (MIT)
+# aligner. Weights are NOT in the image: they live on the network volume at
 # /runpod-volume/models and are verified by populate-volume.sh (pinned
 # URL/revision/sha256 in models-manifest.txt).
 #
+# Real (GPU) image: pinned CUDA/PyTorch runtime base + pinned model runtime
+# (qwen-tts, transformers, soundfile, librosa). Torch comes from the base image
+# and is never reinstalled here (qwen-tts is installed with --no-deps and its
+# runtime deps are pinned explicitly, so PyPI does not replace the CUDA torch).
+#
 # Structural build without CUDA/GPU (checks the package/handler wiring; the
-# engine callable intentionally raises `engine_unavailable` until TODO(live) is
-# wired, so this image is NOT meant to synthesize audio):
+# model runtime is skipped because the base has no torch, and the engine
+# callable then fails visibly with `engine_unavailable`, never a silent stub):
 #   docker build --build-arg BASE_IMAGE=python:3.12-slim -t tts-serverless:stub .
-#   docker run --rm --entrypoint python tts-serverless:stub -c "import tts_worker"
+#   docker run --rm --entrypoint python tts-serverless:stub -c "import tts_worker, tts_worker.handler"
 #
-# TODO(live): re-pin BASE_IMAGE to a CUDA runtime image (e.g. nvidia/cuda
-# 12.8 runtime by digest) and install pinned torch + the Qwen3-TTS and GigaAM
-# runtime packages; warm-load both models before the handler (cold start
-# 3–10 min on the stand, amortized by the phrase batch — plan §7.2). Volumes
-# already auto-populate in docker/entrypoint.sh (VOLUME_AUTOPOPULATE=true).
-#
-# Boundaries: no secrets/tokens/weights in the image; ComfyUI is not used here;
-# only the RunPod handler is exposed.
+# Boundaries: no secrets/tokens/weights in the image; only the RunPod handler is
+# exposed.
 # =============================================================================
 
-ARG BASE_IMAGE=python:3.12-slim
+# Pinned CUDA/PyTorch runtime (CUDA 12.8, cuDNN 9). The tag is published on
+# Docker Hub; host CUDA must be >= 12.8 (Hub listing allows 13.2/13.0).
+ARG BASE_IMAGE=pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
 
 FROM ${BASE_IMAGE}
 
-ARG TTS_WORKER_VERSION=0.2.3
+ARG TTS_WORKER_VERSION=0.3.0
+# auto: install the Qwen3-TTS runtime only when the base image already carries
+# torch (the real CUDA image). 1/0 force it. The python:3.12-slim stub keeps
+# `auto` -> 0, so the structural build stays fast and GPU-free.
+ARG INSTALL_MODEL_RUNTIME=auto
 
 # VOLUME_AUTOPOPULATE=true — автоскачивание pinned-весов Qwen3-TTS/GigaAM на
 # том при старте (docker/entrypoint.sh); false — только ручной populate.
@@ -48,12 +53,28 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends curl ca-certificates; \
     rm -rf /var/lib/apt/lists/*
 
-# Worker Python dependencies. TODO(live): add pinned torch/CUDA and the
-# Qwen3-TTS / GigaAM runtime packages to the real (GPU) image; keep versions
-# pinned and record them in README/release notes.
+# Worker Python dependencies. The pinned model runtime (qwen-tts 0.1.1 +
+# transformers 4.57.3 + soundfile 0.13.1 + librosa 0.11.0, Qwen3-TTS native
+# 24 kHz) is installed only on a base that already has torch — the CUDA image.
+# `--no-deps` for qwen-tts/torchaudio keeps the base CUDA torch build intact.
 RUN set -eux; \
     py="$(command -v python3 || command -v python)"; \
-    "${py}" -m pip install --no-cache-dir "runpod==2.2.1" "httpx>=0.27,<0.29" "jsonschema>=4.21" "boto3>=1.35"; \
+    runtime="${INSTALL_MODEL_RUNTIME}"; \
+    if [ "${runtime}" = "auto" ]; then \
+        if "${py}" -c "import torch" >/dev/null 2>&1; then runtime=1; else runtime=0; fi; \
+    fi; \
+    "${py}" -m pip install --no-cache-dir \
+        "runpod==2.2.1" "httpx>=0.27,<0.29" "jsonschema>=4.21" "boto3>=1.35"; \
+    if [ "${runtime}" = "1" ]; then \
+        "${py}" -m pip install --no-cache-dir \
+            "transformers==4.57.3" "accelerate==1.12.0" "einops>=0.8,<0.9" \
+            "numpy>=1.26,<3" "soundfile==0.13.1" "librosa==0.11.0"; \
+        "${py}" -m pip install --no-cache-dir --no-deps "qwen-tts==0.1.1"; \
+        "${py}" -m pip install --no-cache-dir --no-deps "torchaudio==2.7.1"; \
+        "${py}" -c "import librosa, soundfile, transformers; from qwen_tts import Qwen3TTSModel; print('model runtime ok')"; \
+    else \
+        echo "stub base (no torch): model runtime deps skipped (visible engine_unavailable)"; \
+    fi; \
     "${py}" -c "import boto3, httpx, jsonschema, runpod; print('worker deps ok')"
 
 WORKDIR /opt/tts-worker
@@ -68,8 +89,14 @@ COPY docker/entrypoint.sh /opt/tts-worker/entrypoint.sh
 
 RUN chmod 0755 /opt/tts-worker/populate-volume.sh /opt/tts-worker/entrypoint.sh
 
+# Structural smoke: imports must not require GPU, torch, network or runpod.
+RUN set -eux; \
+    py="$(command -v python3 || command -v python)"; \
+    PYTHONPATH=/opt/tts-worker/src "${py}" -c \
+        "import tts_worker, tts_worker.engine, tts_worker.handler, tts_worker.reference; print('worker wiring ok')"
+
 # Entrypoint: авто-популяция тома (VOLUME_AUTOPOPULATE=true) → handler.
-# Warm-load Qwen3-TTS/GigaAM остаётся шагом живого движка (TODO(live) в
-# src/tts_worker/engine.py/aligner.py): до него handler отвечает видимым
-# `engine_unavailable`, а не тихим фолбэком.
+# Модель загружается лениво при первом job (warm-load не обязателен): холодный
+# старт 3–10 мин амортизируется батчем фраз. До загрузки весов job падает
+# видимым `model_file_missing`/`engine_unavailable`, а не тихим фолбэком.
 ENTRYPOINT ["/opt/tts-worker/entrypoint.sh"]

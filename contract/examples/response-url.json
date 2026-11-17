@@ -18,6 +18,8 @@
     "aligner_version": null,
     "model_hash": "sha256:38fc7fc51c5e776e840414b6fd443962e9411b9654888fd7913e4da643cb857c",
     "gpu_seconds": 0.9,
-    "license": "Apache-2.0"
+    "license": "Apache-2.0",
+    "voice_mode": "preset",
+    "reference_hash": null
   }
 }

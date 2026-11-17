@@ -48,7 +48,11 @@ def test_request_example_is_valid(input_validator: Draft202012Validator) -> None
     input_validator.validate(load_json(contract_dir() / "examples" / "request.json"))
 
 
-@pytest.mark.parametrize("name", ["response.json", "response-url.json"])
+def test_request_clone_example_is_valid(input_validator: Draft202012Validator) -> None:
+    input_validator.validate(load_json(contract_dir() / "examples" / "request-clone.json"))
+
+
+@pytest.mark.parametrize("name", ["response.json", "response-url.json", "response-clone.json"])
 def test_output_examples_are_valid(output_validator: Draft202012Validator, name: str) -> None:
     output_validator.validate(load_json(contract_dir() / "examples" / name))
 
@@ -102,15 +106,56 @@ def test_the_worker_cannot_be_given_a_model_choice(input_validator: Draft202012V
 @pytest.mark.parametrize(
     "voice",
     [
+        {"mode": "design", "instruct": "низкий голос"},
         {"mode": "clone", "speaker_id": 0},
+        {"mode": "clone"},
         {"mode": "preset"},
         {"mode": "preset", "speaker_id": -1},
-        {"mode": "preset", "speaker_id": 0, "reference": "https://files.example/ref.wav"},
+        {"mode": "preset", "speaker_id": 0, "reference": {"url": "https://files.example/ref.wav"}},
     ],
 )
-def test_voice_shape(input_validator: Draft202012Validator, voice: dict) -> None:
+def test_invalid_voice_shape(input_validator: Draft202012Validator, voice: dict) -> None:
     payload = _request_input()
     payload["voice"] = voice
+    _assert_invalid(input_validator, {"input": payload})
+
+
+def _clone_voice(**reference_overrides: object) -> dict:
+    reference = {
+        "url": "https://files.example/voice/reference-001.wav?X-Amz-Signature=test",
+        "sha256": "a" * 64,
+        "text": "Проверка голоса для клонирования.",
+        "language": "ru",
+    }
+    reference.update(reference_overrides)
+    return {"mode": "clone", "reference": reference}
+
+
+def test_clone_voice_is_valid(input_validator: Draft202012Validator) -> None:
+    payload = _request_input()
+    payload["voice"] = _clone_voice()
+    input_validator.validate({"input": payload})
+
+
+@pytest.mark.parametrize(
+    "reference_overrides",
+    [
+        {"url": "ftp://files.example/ref.wav"},
+        {"url": ""},
+        {"sha256": "abc"},
+        {"sha256": "A" * 64},
+        {"text": ""},
+        {"text": "x" * 501},
+        {"language": "en"},
+        {"url": "https://files.example/ref.wav", "extra": 1},
+        {"text": 5},
+    ],
+)
+def test_clone_reference_shape(
+    input_validator: Draft202012Validator, reference_overrides: dict
+) -> None:
+    payload = _request_input()
+    payload["voice"] = _clone_voice(**reference_overrides)
     _assert_invalid(input_validator, {"input": payload})
 
 
@@ -187,6 +232,7 @@ VALID_TELEMETRY = {
     "model_hash": "sha256:" + "f" * 64,
     "gpu_seconds": 1.7,
     "license": "Apache-2.0",
+    "voice_mode": "preset",
 }
 
 
@@ -258,6 +304,8 @@ def test_take_facts_validation(output_validator: Draft202012Validator, patch: di
         ("gpu_seconds", 0),
         ("license", ""),
         ("aligner_version", 5),
+        ("voice_mode", "design"),
+        ("voice_mode", None),
     ],
 )
 def test_telemetry_bad_values(
@@ -265,6 +313,42 @@ def test_telemetry_bad_values(
 ) -> None:
     telemetry = copy.deepcopy(VALID_TELEMETRY)
     telemetry[field] = value
+    _assert_invalid(output_validator, _output(telemetry=telemetry))
+
+
+def test_telemetry_reference_hash_is_optional(output_validator: Draft202012Validator) -> None:
+    # preset: reference_hash отсутствует или null — оба варианта валидны.
+    output_validator.validate(_output())
+
+    telemetry = copy.deepcopy(VALID_TELEMETRY)
+    telemetry["reference_hash"] = None
+    output_validator.validate(_output(telemetry=telemetry))
+
+    telemetry["reference_hash"] = "b" * 64
+    telemetry["voice_mode"] = "clone"
+    output_validator.validate(_output(telemetry=telemetry))
+
+
+@pytest.mark.parametrize(
+    "reference_hash",
+    ["abc", "B" * 64, "sha256:" + "b" * 64, 5],
+)
+def test_telemetry_reference_hash_shape(
+    output_validator: Draft202012Validator, reference_hash: object
+) -> None:
+    telemetry = copy.deepcopy(VALID_TELEMETRY)
+    telemetry["voice_mode"] = "clone"
+    telemetry["reference_hash"] = reference_hash
+    _assert_invalid(output_validator, _output(telemetry=telemetry))
+
+@pytest.mark.parametrize("variant", ["absent", "null"])
+def test_clone_telemetry_requires_reference_hash(
+    output_validator: Draft202012Validator, variant: str
+) -> None:
+    telemetry = copy.deepcopy(VALID_TELEMETRY)
+    telemetry["voice_mode"] = "clone"
+    if variant == "null":
+        telemetry["reference_hash"] = None
     _assert_invalid(output_validator, _output(telemetry=telemetry))
 
 

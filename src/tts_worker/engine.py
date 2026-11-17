@@ -1,21 +1,51 @@
 """Qwen3-TTS callable: граница исполнения движка (мок/инъекция для тестов).
 
-Живой код модели **не подключён в этом репозитории** (нет torch/GPU в CI и
-образ собирается без весов): ``TODO(live)`` ниже — куда вставить pinned
-Qwen3-TTS. Важно, что импорты тяжёлых пакетов ленивые: воркер и тесты
-запускаются без GPU и без установленного torch; отсутствие движка даёт
-видимый код ``engine_unavailable``, а не ImportError и не тихий фолбэк.
+Живой код модели **ленивый**: torch/qwen-tts импортируются только при первом
+job'е (``_load``), поэтому воркер и тесты запускаются без GPU и без
+установленного torch; отсутствие runtime даёт видимый код
+``engine_unavailable``, а не ImportError и не тихий фолбэк.
+
+Модель — pinned **Qwen3-TTS 1.7B Base** (Apache-2.0): она умеет только
+клонирование голоса (``generate_voice_clone``), пресетных голосов у Base нет.
+Поэтому ``voice.mode="preset"`` на этом образе — видимый
+``voice_mode_unsupported``, а не подмена пресетом. Reference PCM приходит от
+``tts_worker.reference`` (24 кГц mono): воркер скачал и проверил его сам.
 """
 
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Protocol
 
 from .errors import WorkerError
+from .reference import ReferenceAudio
 
 ENGINE_ID = "qwen3_tts"
+
+#: Контрактный язык (``ru``) → имя языка модели (``russian``).
+#: Qwen3-TTS ищет язык в ``talker_config.codec_language_id``; ключи там —
+#: полные английские имена (``russian``, ``english``, ...), не ISO-коды.
+LANGUAGE_NAMES: dict[str, str] = {
+    "ru": "russian",
+    "en": "english",
+    "de": "german",
+    "fr": "french",
+    "es": "spanish",
+    "it": "italian",
+    "pt": "portuguese",
+    "ja": "japanese",
+    "ko": "korean",
+    "zh": "chinese",
+}
+
+
+def language_for_model(language: str) -> str:
+    """Имя языка для Qwen3-TTS: ISO-код из контракта → ключ ``codec_language_id``."""
+
+    key = str(language or "").strip().lower()
+    return LANGUAGE_NAMES.get(key, key or "auto")
 
 
 @dataclass(frozen=True)
@@ -27,7 +57,7 @@ class SynthesisTake:
 
 
 class TtsEngine(Protocol):
-    """Контракт движка: фраза + параметры → N дублей WAV."""
+    """Контракт движка: фраза + параметры + референс → N дублей WAV."""
 
     engine_id: str
     engine_version: str
@@ -43,17 +73,85 @@ class TtsEngine(Protocol):
         takes: int,
         sample_rate: int,
         channels: int,
+        reference: ReferenceAudio | None = None,
     ) -> list[SynthesisTake]:
         ...
 
 
+# --- Граница аудио-постобработки ---------------------------------------------
+# Отдельные функции с ленивыми импортами: тесты без numpy/librosa подменяют
+# их и проверяют порядок/параметры (speed → resample → channels → WAV PCM s16le).
+
+
+def _time_stretch(pcm: Any, *, rate: float) -> Any:
+    """Явная скорость автора (speed ≠ 1.0): ``librosa.effects.time_stretch``."""
+
+    import librosa
+
+    return librosa.effects.time_stretch(pcm, rate=float(rate))
+
+
+def _resample(pcm: Any, *, orig_sr: int, target_sr: int) -> Any:
+    """24 кГц native → ``render.sample_rate``."""
+
+    import librosa
+
+    return librosa.resample(pcm, orig_sr=int(orig_sr), target_sr=int(target_sr))
+
+
+def _to_channels(pcm: Any, *, channels: int) -> Any:
+    """Mono PCM → запрошенное число каналов (1/2 по контракту)."""
+
+    import numpy as np
+
+    data = np.asarray(pcm, dtype=np.float32)
+    if data.ndim == 1:
+        data = data[:, None]
+    if data.shape[1] == channels:
+        return data
+    if data.shape[1] == 1:
+        return np.repeat(data, channels, axis=1)
+    raise WorkerError(
+        "output_invalid",
+        f"каналы движка {data.shape[1]} не сводятся к запрошенным {channels}",
+    )
+
+
+def _encode_wav(pcm: Any, *, sample_rate: int) -> bytes:
+    """WAV PCM s16le (контракт §2: отдаётся только WAV)."""
+
+    import soundfile as sf
+
+    buffer = io.BytesIO()
+    sf.write(buffer, pcm, int(sample_rate), format="WAV", subtype="PCM_16")
+    return buffer.getvalue()
+
+
+def _postprocess(
+    pcm: Any,
+    *,
+    source_rate: int,
+    target_rate: int,
+    channels: int,
+    speed: float,
+) -> bytes:
+    """Привести выход модели к контракту: скорость, частота, каналы, WAV s16le."""
+
+    if abs(float(speed) - 1.0) > 1e-9:
+        pcm = _time_stretch(pcm, rate=float(speed))
+    if int(source_rate) != int(target_rate):
+        pcm = _resample(pcm, orig_sr=int(source_rate), target_sr=int(target_rate))
+    pcm = _to_channels(pcm, channels=int(channels))
+    return _encode_wav(pcm, sample_rate=int(target_rate))
+
+
 class Qwen3TtsEngine:
-    """Pinned Qwen3-TTS 1.7B на томе; callable-обвязка без выбора модели.
+    """Pinned Qwen3-TTS 1.7B Base на томе; callable-обвязка без выбора модели.
 
     Модель — свойство образа/тома, а не job'а: параметра ``model`` нигде нет.
     ``engine_version`` приходит из pinned-манифеста при сборке зависимостей
-    (факт загруженного образа); после реальной загрузки весов её можно уточнить
-    из конфига модели — это по-прежнему факт исполнения, не запроса.
+    (факт загруженного образа). Base поддерживает только клонирование:
+    ``generate_voice_clone(text, language, ref_audio=(np, sr), ref_text=...)``.
     """
 
     engine_id = ENGINE_ID
@@ -62,24 +160,79 @@ class Qwen3TtsEngine:
         self._model_dir = Path(model_dir)
         self.engine_version = engine_version
         self._device = device
-        self._loaded = False
+        self._model: Any | None = None
 
-    def _load(self) -> None:
-        # TODO(live): подключить pinned исполнение Qwen3-TTS:
-        #   1. lazi import torch + пакет Qwen3-TTS (зафиксировать версию в образе);
-        #   2. загрузить веса из self._model_dir (model.safetensors + speech_tokenizer)
-        #      на self._device; Native 24 kHz, 1.7B, Apache-2.0;
-        #   3. прогреть модель при старте воркера (загрузка при старте — plan §7.2),
-        #      чтобы первый job не платил холодный старт (3–10 мин амортизируются батчем);
-        #   4. ресемплинг 24 kHz → render.sample_rate и каналы тут же на границе,
-        #      в WAV PCM s16le.
-        # Пока кода исполнения нет — видимая ошибка, не подмена.
-        self._loaded = True
-        raise WorkerError(
-            "engine_unavailable",
-            "Qwen3-TTS исполнение не подключено (TODO(live)): модель "
-            f"{self._model_dir} на устройстве {self._device}; тесты/стенд — fake/injection",
-        )
+    def _load(self) -> Any:
+        """Ленивая загрузка pinned Qwen3-TTS Base с тома (один раз на процесс)."""
+
+        if self._model is not None:
+            return self._model
+        try:
+            import torch
+            from qwen_tts import Qwen3TTSModel
+        except ImportError as exc:
+            raise WorkerError(
+                "engine_unavailable",
+                "Qwen3-TTS runtime (torch/qwen-tts) не установлен в образе: "
+                f"{exc}; тесты/стенд — fake/injection",
+            ) from exc
+        device = str(self._device or "cuda").strip()
+        kwargs: dict[str, Any] = {"device_map": "cuda:0" if device in {"cuda", "cuda:0"} else device}
+        if device.startswith("cuda") or device == "cuda":
+            kwargs["dtype"] = torch.bfloat16
+        try:
+            model = Qwen3TTSModel.from_pretrained(str(self._model_dir), **kwargs)
+        except Exception as exc:  # noqa: BLE001 - видимая ошибка загрузки модели
+            raise WorkerError(
+                "engine_unavailable",
+                f"Qwen3-TTS Base не загрузился из {self._model_dir}: {exc}",
+            ) from exc
+        self._model = model
+        return model
+
+    def _generate_clone(
+        self,
+        model: Any,
+        *,
+        text: str,
+        language: str,
+        reference: ReferenceAudio,
+        seed: int | None,
+    ) -> tuple[Any, int]:
+        """Один вызов ``generate_voice_clone``: (numpy PCM mono, частота)."""
+
+        if seed is not None:
+            try:
+                import torch
+            except ImportError as exc:  # pragma: no cover - зависимость образа
+                raise WorkerError(
+                    "engine_unavailable",
+                    f"torch не установлен в образе воркера: {exc}",
+                ) from exc
+            torch.manual_seed(int(seed))
+        try:
+            wavs, sample_rate = model.generate_voice_clone(
+                text=text,
+                language=language_for_model(language),
+                ref_audio=(reference.pcm, reference.sample_rate),
+                ref_text=reference.text,
+            )
+        except WorkerError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - сбой генерации — видимый engine_failed
+            raise WorkerError(
+                "engine_failed",
+                f"Qwen3-TTS generate_voice_clone: {type(exc).__name__}: {exc}",
+            ) from exc
+        if isinstance(wavs, (list, tuple)):
+            if not wavs:
+                raise WorkerError("audio_empty_result", "Qwen3-TTS вернул 0 дублей")
+            pcm = wavs[0]
+        else:
+            pcm = wavs
+        if pcm is None:
+            raise WorkerError("audio_empty_result", "Qwen3-TTS вернул пустой PCM")
+        return pcm, int(sample_rate)
 
     def synthesize(
         self,
@@ -92,9 +245,55 @@ class Qwen3TtsEngine:
         takes: int,
         sample_rate: int,
         channels: int,
+        reference: ReferenceAudio | None = None,
     ) -> list[SynthesisTake]:
-        self._load()  # TODO(live): после подключения — реальный синтез
-        raise AssertionError("unreachable: _load() always raises until TODO(live) is done")
+        """Синтезировать 1–2 дубля клонированным голосом; preset на Base — ошибка."""
+
+        mode = str(voice.get("mode") or "") if isinstance(voice, Mapping) else ""
+        if mode == "preset":
+            raise WorkerError(
+                "voice_mode_unsupported",
+                "Qwen3-TTS 1.7B Base не имеет пресетных голосов: нужен "
+                "voice.mode='clone' + reference; тихого перехода на пресет нет",
+            )
+        if mode != "clone":
+            raise WorkerError(
+                "voice_mode_unsupported",
+                f"voice.mode={mode!r}: Qwen3-TTS Base поддерживает только clone",
+            )
+        if reference is None:
+            raise WorkerError(
+                "reference_missing",
+                "voice.mode='clone' без подготовленного референса",
+            )
+
+        model = self._load()
+        count = max(1, int(takes))
+        result: list[SynthesisTake] = []
+        for _index in range(count):
+            pcm, source_rate = self._generate_clone(
+                model,
+                text=text,
+                language=language,
+                reference=reference,
+                seed=seed,
+            )
+            audio = _postprocess(
+                pcm,
+                source_rate=source_rate,
+                target_rate=int(sample_rate),
+                channels=int(channels),
+                speed=float(speed),
+            )
+            result.append(SynthesisTake(audio=audio, seed=seed))
+        return result
 
 
-__all__ = ["ENGINE_ID", "Qwen3TtsEngine", "SynthesisTake", "TtsEngine"]
+__all__ = [
+    "ENGINE_ID",
+    "LANGUAGE_NAMES",
+    "Qwen3TtsEngine",
+    "SynthesisTake",
+    "TtsEngine",
+    "language_for_model",
+]

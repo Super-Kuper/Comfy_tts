@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.invalid/tts-serverless/output.schema.json",
   "title": "TTS serverless worker output (tts-serverless/v1)",
-  "description": "Result of one phrase job: 1–2 takes (each with exactly one of audio_b64/audio_url), GigaAM word timestamps/WER and execution-fact telemetry.",
+  "description": "Result of one phrase job: 1–2 takes (each with exactly one of audio_b64/audio_url), GigaAM word timestamps/WER and execution-fact telemetry, including the executed voice_mode and (for cloning) the verified reference_hash.",
   "type": "object",
   "required": [
     "request_id",
@@ -146,7 +146,8 @@
         "aligner_version",
         "model_hash",
         "gpu_seconds",
-        "license"
+        "license",
+        "voice_mode"
       ],
       "properties": {
         "engine": {
@@ -184,8 +185,49 @@
           "type": "string",
           "minLength": 1,
           "description": "License identifier of the executed TTS weights, from the pinned manifest row (Apache-2.0 for Qwen3-TTS)."
+        },
+        "voice_mode": {
+          "type": "string",
+          "enum": [
+            "preset",
+            "clone"
+          ],
+          "description": "Voice mode the job actually executed (input.voice.mode fact). On the Base image only clone is executable; preset fails visibly before this telemetry exists."
+        },
+        "reference_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Verified sha256 of the cloned voice reference (raw lowercase hex, same form as input.voice.reference.sha256 / media content_hash); null for preset mode."
         }
       },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "voice_mode": {
+                "const": "clone"
+              }
+            },
+            "required": [
+              "voice_mode"
+            ]
+          },
+          "then": {
+            "required": [
+              "reference_hash"
+            ],
+            "properties": {
+              "reference_hash": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      ],
       "additionalProperties": true
     }
   },

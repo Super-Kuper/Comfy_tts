@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.invalid/tts-serverless/input.schema.json",
   "title": "TTS serverless worker input (tts-serverless/v1)",
-  "description": "RunPod serverless input: one Russian phrase, voice/parameter snapshot and render/aligner settings. The worker loads the pinned Qwen3-TTS model from its own image/volume and never receives a model choice.",
+  "description": "RunPod serverless input: one Russian phrase, voice/parameter snapshot and render/aligner settings. The worker loads the pinned Qwen3-TTS 1.7B Base model from its own image/volume and never receives a model choice. Voice is either a clone reference (url/sha256/text/language) or the additive-compatible preset shape (unsupported on Base).",
   "type": "object",
   "required": [
     "input"
@@ -37,27 +37,80 @@
           "description": "Voice language of the phrase; the product voices are Russian."
         },
         "voice": {
-          "type": "object",
-          "required": [
-            "mode",
-            "speaker_id"
-          ],
-          "properties": {
-            "mode": {
-              "type": "string",
-              "enum": [
-                "preset"
+          "description": "Voice selection. v1 keeps the preset shape for compatibility; in worker 0.3.0 (pinned Qwen3-TTS 1.7B Base) only `clone` is executable and `preset` fails visibly with voice_mode_unsupported — Base has no preset voices and there is no silent fallback.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "mode",
+                "speaker_id"
               ],
-              "description": "Voice mode. v1 has presets only; clone/VoiceDesign are additive later."
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "const": "preset",
+                  "description": "Preset voice mode (additive-compatible shape; unsupported on the Base image)."
+                },
+                "speaker_id": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 99,
+                  "description": "Preset speaker index in a preset-voice model's catalog."
+                }
+              },
+              "additionalProperties": false
             },
-            "speaker_id": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 99,
-              "description": "Preset speaker index in the pinned model's voice catalog."
+            {
+              "type": "object",
+              "required": [
+                "mode",
+                "reference"
+              ],
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "const": "clone",
+                  "description": "Voice cloning from an uploaded reference (Qwen3-TTS Base generate_voice_clone)."
+                },
+                "reference": {
+                  "type": "object",
+                  "required": [
+                    "url",
+                    "sha256",
+                    "text",
+                    "language"
+                  ],
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "pattern": "^https?://",
+                      "description": "Presigned HTTP(S) URL of the reference audio (the service signs its own storage object; the worker never logs this URL)."
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$",
+                      "description": "sha256 of the reference file (lowercase hex), equal to the media item content_hash in the service; verified by the worker (reference_hash otherwise)."
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500,
+                      "description": "Exact transcript of the reference recording (needed for ICL mode; 1–500 chars)."
+                    },
+                    "language": {
+                      "type": "string",
+                      "enum": [
+                        "ru"
+                      ],
+                      "description": "Reference language; the product voices are Russian."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
             }
-          },
-          "additionalProperties": false
+          ]
         },
         "speed": {
           "type": "number",

@@ -1,10 +1,14 @@
 """RunPod handler контракта `tts-serverless/v1`.
 
 Поток: валидация job/input по схеме → pinned-модели на томе (engine/aligner,
-``model_file_missing`` / ``provision_hash_mismatch``) → нормализация текста по
-словарю → синтез Qwen3-TTS (1–2 дубля) → факты WAV из заголовка → GigaAM
-word timestamps/WER → телеметрия из исполнения → доставка base64/URL →
-финальный гейт output-схемой.
+``model_file_missing`` / ``provision_hash_mismatch``) → голос: для
+``voice.mode=clone`` референс скачивается по presigned URL, проверяется по
+sha256/размеру/длительности и декодируется в PCM 24 кГц mono
+(``reference_*``); для preset — как раньше → нормализация текста по словарю →
+синтез Qwen3-TTS Base (1–2 дубля; preset на Base даёт видимый
+``voice_mode_unsupported``) → факты WAV из заголовка → GigaAM word
+timestamps/WER → телеметрия из исполнения (``voice_mode``/``reference_hash``
+аддитивно) → доставка base64/URL → финальный гейт output-схемой.
 
 Воркер **не выбирает модель**: модель — свойство образа/тома, поля выбора в
 контракте нет; ``engine_version``/``aligner_version`` — факты исполнения.
@@ -32,6 +36,14 @@ from .errors import WorkerError
 from .health import health_payload
 from .manifest import ModelFile, ModelManifest, sha256_file
 from .normalization import Normalizer
+from .reference import (
+    AudioDecoder,
+    HttpxReferenceDownloader,
+    ReferenceAudio,
+    ReferenceDownloader,
+    SoundFileDecoder,
+    prepare_reference,
+)
 from .storage import AudioStorage, S3Storage, deliver_audio
 
 _LOG = logging.getLogger(__name__)
@@ -52,6 +64,8 @@ class Dependencies:
     storage: AudioStorage | None = None
     model_hasher: ModelHasher = sha256_file
     clock: Clock = time.monotonic
+    reference_downloader: ReferenceDownloader | None = None
+    reference_decoder: AudioDecoder | None = None
 
 
 def _job_id(job: Any) -> str:
@@ -146,14 +160,36 @@ async def execute(job: Any, deps: Dependencies) -> dict[str, Any]:
     if aligner_enabled:
         _measure_model(aligner_entry, deps)
 
+    # Голос: Base умеет только клонирование. Референс скачивается/проверяется
+    # здесь (видимые reference_*), движку уходит уже PCM 24 кГц mono; URL и
+    # содержимое референса в лог не попадают — только sha256.
+    voice_mode = str(voice.get("mode") or "")
+    reference: ReferenceAudio | None = None
+    if voice_mode == "clone":
+        reference = await prepare_reference(
+            voice,
+            downloader=deps.reference_downloader or HttpxReferenceDownloader(),
+            decoder=deps.reference_decoder or SoundFileDecoder(),
+        )
+    elif voice_mode != "preset":
+        # Схема уже ограничивает mode, но defensive-код остаётся видимым:
+        # незнакомый режим не должен тихо превращаться в пресет.
+        raise WorkerError(
+            "voice_mode_unsupported",
+            f"voice.mode={voice_mode!r}: ожидалось preset|clone",
+        )
+
     normalized = deps.normalizer(text, language)
     if not normalized.text.strip():
         raise WorkerError("text_empty", "после нормализации текст пуст")
     _LOG.info(
-        "job %s: takes=%d, language=%s, aligner=%s, нормализация=%s",
+        "job %s: takes=%d, language=%s, voice_mode=%s, reference_hash=%s, "
+        "aligner=%s, нормализация=%s",
         _job_id(job),
         takes_requested,
         language,
+        voice_mode,
+        reference.sha256 if reference is not None else None,
         aligner_enabled,
         list(normalized.applied),
     )
@@ -168,6 +204,7 @@ async def execute(job: Any, deps: Dependencies) -> dict[str, Any]:
         takes=takes_requested,
         sample_rate=sample_rate,
         channels=channels,
+        reference=reference,
     )
     if not synthesis:
         raise WorkerError("audio_empty_result", "движок вернул 0 дублей — это не успех")
@@ -216,6 +253,11 @@ async def execute(job: Any, deps: Dependencies) -> dict[str, Any]:
         "model_hash": f"sha256:{engine_sha256}",
         "gpu_seconds": gpu_seconds,
         "license": engine_entry.license,
+        # Аддитивные факты голоса (contract §2.1): режим исполнения и sha256
+        # референса (та же форма, что ``media_items.content_hash``; для preset —
+        # null). Значение — проверенный sha256, а не поле запроса.
+        "voice_mode": voice_mode,
+        "reference_hash": reference.sha256 if reference is not None else None,
     }
     result: dict[str, Any] = {
         "request_id": inp["request_id"],
@@ -244,6 +286,8 @@ def build_handler(
     *,
     model_hasher: ModelHasher = sha256_file,
     clock: Clock = time.monotonic,
+    reference_downloader: ReferenceDownloader | None = None,
+    reference_decoder: AudioDecoder | None = None,
 ) -> Callable[[Any], Awaitable[dict[str, Any]]]:
     """Собрать handler с зафиксированными зависимостями (для тестов и main)."""
 
@@ -256,6 +300,8 @@ def build_handler(
         storage=storage,
         model_hasher=model_hasher,
         clock=clock,
+        reference_downloader=reference_downloader,
+        reference_decoder=reference_decoder,
     )
 
     async def handler(job: Any) -> dict[str, Any]:
@@ -301,6 +347,8 @@ def default_dependencies() -> Dependencies:
             aligner=aligner,
             normalizer=normalizer,
             storage=storage,
+            reference_downloader=HttpxReferenceDownloader(),
+            reference_decoder=SoundFileDecoder(),
         )
     return _default_deps
 

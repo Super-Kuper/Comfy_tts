@@ -9,10 +9,26 @@
       "channels": 2,
       "seed": null,
       "words": [
-        {"text": "Швы", "start_ms": 40, "end_ms": 230},
-        {"text": "затянуты", "start_ms": 240, "end_ms": 620},
-        {"text": "Следов", "start_ms": 700, "end_ms": 1020},
-        {"text": "нет", "start_ms": 1060, "end_ms": 1240}
+        {
+          "text": "Швы",
+          "start_ms": 40,
+          "end_ms": 230
+        },
+        {
+          "text": "затянуты",
+          "start_ms": 240,
+          "end_ms": 620
+        },
+        {
+          "text": "Следов",
+          "start_ms": 700,
+          "end_ms": 1020
+        },
+        {
+          "text": "нет",
+          "start_ms": 1060,
+          "end_ms": 1240
+        }
       ],
       "wer": 0.0
     },
@@ -24,10 +40,26 @@
       "channels": 2,
       "seed": null,
       "words": [
-        {"text": "Швы", "start_ms": 55, "end_ms": 235},
-        {"text": "затянуты", "start_ms": 250, "end_ms": 615},
-        {"text": "Следов", "start_ms": 690, "end_ms": 1005},
-        {"text": "нет", "start_ms": 1045, "end_ms": 1215}
+        {
+          "text": "Швы",
+          "start_ms": 55,
+          "end_ms": 235
+        },
+        {
+          "text": "затянуты",
+          "start_ms": 250,
+          "end_ms": 615
+        },
+        {
+          "text": "Следов",
+          "start_ms": 690,
+          "end_ms": 1005
+        },
+        {
+          "text": "нет",
+          "start_ms": 1045,
+          "end_ms": 1215
+        }
       ],
       "wer": 0.0
     }
@@ -38,6 +70,8 @@
     "aligner_version": "gigaam-v3@2026-04",
     "model_hash": "sha256:38fc7fc51c5e776e840414b6fd443962e9411b9654888fd7913e4da643cb857c",
     "gpu_seconds": 1.7,
-    "license": "Apache-2.0"
+    "license": "Apache-2.0",
+    "voice_mode": "preset",
+    "reference_hash": null
   }
 }

@@ -4,6 +4,51 @@
 [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии —
 [SemVer](https://semver.org/lang/ru/).
 
+## [0.3.0] — 2026-11-17
+
+Base-клонирование голоса (Qwen3-TTS 1.7B Base): контракт `tts-serverless/v1`
+аддитивно, живой движок, референс по presigned URL, CUDA-образ.
+
+### Добавлено
+
+- **Контракт §1.4:** `input.voice` — `oneOf`: `{mode:"clone",reference:{url,
+  sha256, text, language}}` или совместимый `{mode:"preset",speaker_id}`.
+  Референс — presigned HTTP(S) URL, sha256 (64 hex, равен `media_items.
+  content_hash`), точный текст 1–500 символов. Схемы, примеры
+  (`request-clone.json`/`response-clone.json`) и контракт обновлены без смены
+  строки версии контракта.
+- **Референс** (`src/tts_worker/reference.py`): скачивание httpx (таймаут 30 с,
+  redirects) с лимитом ≤25 МБ, проверка sha256, декодирование WAV/FLAC/MP3/OGG
+  (soundfile/librosa), mono 24 кГц, длительность 1–15 с. Видимые коды
+  `reference_missing`, `reference_invalid`, `reference_hash`,
+  `reference_too_large`; URL и аудио не логируются.
+- **Движок** (`src/tts_worker/engine.py`): `Qwen3TtsEngine` лениво грузит
+  pinned Base с тома и вызывает `generate_voice_clone(text, language,
+  ref_audio=(pcm, sr), ref_text)`; `ru` → `russian`; takes 1–2, seed через
+  `torch.manual_seed`; явная скорость (`librosa.effects.time_stretch`),
+  ресемплинг в `render.sample_rate`, WAV PCM s16le. Preset на Base —
+  видимый `voice_mode_unsupported` (без подмены); сбой генерации —
+  `engine_failed`.
+- **Телеметрия §2.1:** аддитивные `voice_mode` (обязательное) и
+  `reference_hash` (проверенный sha256, raw hex; `null` для preset).
+- **Образ:** default base — pinned `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime`
+  + `qwen-tts==0.1.1` (--no-deps), `transformers==4.57.3`,
+  `accelerate==1.12.0`, `soundfile==0.13.1`, `librosa==0.11.0`; torch из базы не
+  переустанавливается. Stub-путь `--build-arg BASE_IMAGE=python:3.12-slim`
+  сохранён (runtime авто-пропускается без torch), добавлен структурный smoke
+  импортов.
+- **Hub:** `v0.3.0`, container disk 40 ГБ, host CUDA `13.2`/`13.0` (образ CUDA
+  12.8); changelog/description обновлены.
+- **Тесты:** fake downloader/decoder и fake engine; clone input, hash/size/
+  duration/url, preset-on-Base, takes, телеметрия, схемы/примеры контракта,
+  `_postprocess` control flow (без numpy/librosa). Сьют без GPU/сети/torch.
+
+### Не проверено живьём
+
+- `generate_voice_clone` на реальном GPU-стенде (качество RU, латентность,
+  совместимость пинов qwen-tts/transformers с CUDA-образом) — не запускалось.
+- GigaAM-v3 aligner остаётся `TODO(live)` (`aligner_unavailable`).
+
 ## [0.2.3] — 2026-11-17
 
 Исправлен Hub-билд: test pod на H100 80GB вместо недоступной RTX 4090.

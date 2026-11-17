@@ -1,11 +1,12 @@
 """RunPod serverless entrypoint for the TTS worker.
 
-The container boots with the pinned Qwen3-TTS 1.7B + GigaAM-v3 weights from the
-network volume (TODO(live): warm load at startup, see README) and then runs this
-file. The job handler itself lives in ``src/tts_worker/handler.py``; this module
-only makes the ``tts_worker`` package importable (``PYTHONPATH`` is already set
-in the image, the ``sys.path`` line covers a plain repository checkout) and
-starts the RunPod serverless loop.
+The container boots with the pinned Qwen3-TTS 1.7B Base + GigaAM-v3 weights from
+the network volume (the Qwen3-TTS model is loaded lazily on the first job; warm
+load at startup is optional, see README) and then runs this file. The job
+handler itself lives in ``src/tts_worker/handler.py``; this module only makes
+the ``tts_worker`` package importable (``PYTHONPATH`` is already set in the
+image, the ``sys.path`` line covers a plain repository checkout) and starts the
+RunPod serverless loop.
 
 Job contract: ``contract/worker-contract.md`` (``tts-serverless/v1``).
 """

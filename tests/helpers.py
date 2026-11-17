@@ -16,7 +16,9 @@ from typing import Any, Callable, Sequence
 
 from tts_worker.aligner import Alignment, WordTiming
 from tts_worker.engine import SynthesisTake
+from tts_worker.errors import WorkerError
 from tts_worker.normalization import NormalizationResult
+from tts_worker.reference import REFERENCE_SAMPLE_RATE, DecodedAudio
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "contract"
@@ -205,3 +207,75 @@ class FakeClock:
         value = self._values[min(self.calls, len(self._values) - 1)]
         self.calls += 1
         return value
+
+
+# --- Voice-clone reference fixtures (no network, no soundfile/librosa) --------
+
+
+def reference_bytes(duration_seconds: float = 3.0) -> bytes:
+    """Валидный по фактам WAV-референс: 24 кГц mono, нужная длительность."""
+
+    return wav_bytes(duration_seconds, sample_rate=REFERENCE_SAMPLE_RATE, channels=1)
+
+
+def reference_sha256(data: bytes | None = None) -> str:
+    """sha256 референса в нижнем hex — форма контракта ``reference.sha256``."""
+
+    return hashlib.sha256(reference_bytes() if data is None else data).hexdigest()
+
+
+REFERENCE_PCM = object()
+
+
+class FakeReferenceDownloader:
+    """Подменяет httpx: отдаёт заданные байты и записывает URL."""
+
+    def __init__(
+        self,
+        payloads: dict[str, bytes] | None = None,
+        *,
+        default: bytes | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self._payloads = dict(payloads or {})
+        self._default = default
+        self._error = error
+        self.urls: list[str] = []
+
+    async def download(self, url: str) -> bytes:
+        self.urls.append(url)
+        if self._error is not None:
+            raise self._error
+        if url in self._payloads:
+            return self._payloads[url]
+        if self._default is not None:
+            return self._default
+        raise WorkerError("reference_invalid", "fake downloader: нет payload для URL")
+
+
+class FakeReferenceDecoder:
+    """Подменяет soundfile/librosa: отдаёт заданный PCM/длительность/частоту."""
+
+    def __init__(
+        self,
+        *,
+        pcm: Any = REFERENCE_PCM,
+        sample_rate: int = REFERENCE_SAMPLE_RATE,
+        duration_seconds: float = 3.0,
+        error: Exception | None = None,
+    ) -> None:
+        self.pcm = pcm
+        self.sample_rate = sample_rate
+        self.duration_seconds = duration_seconds
+        self.error = error
+        self.calls: list[bytes] = []
+
+    def decode(self, data: bytes) -> DecodedAudio:
+        self.calls.append(data)
+        if self.error is not None:
+            raise self.error
+        return DecodedAudio(
+            pcm=self.pcm,
+            sample_rate=self.sample_rate,
+            duration_seconds=self.duration_seconds,
+        )

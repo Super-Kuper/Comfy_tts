@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import dataclasses
+import logging
 import sys
 
 import pytest
@@ -14,19 +15,25 @@ from helpers import (
     FakeClock,
     FakeEngine,
     FakeNormalizer,
+    FakeReferenceDecoder,
+    FakeReferenceDownloader,
     FakeStorage,
+    REFERENCE_PCM,
     contract_dir,
     load_json,
     model_sha,
+    reference_bytes,
+    reference_sha256,
     wav_bytes,
 )
 from jsonschema import Draft202012Validator
 
 from tts_worker.aligner import WordTiming
-from tts_worker.engine import SynthesisTake
+from tts_worker.engine import Qwen3TtsEngine, SynthesisTake
 from tts_worker.errors import WorkerError
 from tts_worker.handler import build_handler
 from tts_worker.normalization import DictionaryNormalizer
+from tts_worker.reference import prepare_reference
 
 REQUEST_ID = "3f6c2b7a-1d0e-4c55-9a77-2b1cd4a9e001"
 
@@ -44,7 +51,17 @@ def _job(**input_overrides) -> dict:
     return {"id": "job-1", "input": payload}
 
 
-def _handler(setup, *, engine=None, aligner=None, normalizer=None, storage=None, clock=None):
+def _handler(
+    setup,
+    *,
+    engine=None,
+    aligner=None,
+    normalizer=None,
+    storage=None,
+    clock=None,
+    downloader=None,
+    decoder=None,
+):
     config, manifest, _models_root = setup
     engine = engine or FakeEngine()
     aligner = aligner or FakeAligner()
@@ -58,8 +75,36 @@ def _handler(setup, *, engine=None, aligner=None, normalizer=None, storage=None,
         normalizer,
         storage=storage,
         clock=clock,
+        reference_downloader=downloader,
+        reference_decoder=decoder,
     )
     return handler, engine, aligner, normalizer
+
+
+REFERENCE_URL = "https://files.example/voice/reference-001.wav?X-Amz-Signature=test"
+REFERENCE_BYTES = reference_bytes(3.0)
+REFERENCE_SHA = reference_sha256(REFERENCE_BYTES)
+
+
+def _clone_job(**reference_overrides) -> dict:
+    """Job с валидным clone-голосом; sha256 сходится с REFERENCE_BYTES."""
+
+    reference = {
+        "url": REFERENCE_URL,
+        "sha256": REFERENCE_SHA,
+        "text": "Проверка голоса для клонирования.",
+        "language": "ru",
+    }
+    reference.update(reference_overrides)
+    job = _job()
+    job["input"]["voice"] = {"mode": "clone", "reference": reference}
+    return job
+
+
+def _clone_handler(setup, *, downloader=None, decoder=None, **kwargs):
+    downloader = downloader or FakeReferenceDownloader({REFERENCE_URL: REFERENCE_BYTES})
+    decoder = decoder or FakeReferenceDecoder()
+    return _handler(setup, downloader=downloader, decoder=decoder, **kwargs)
 
 
 def _output_validator() -> Draft202012Validator:
@@ -401,3 +446,169 @@ def test_import_without_runpod() -> None:
     import tts_worker.handler  # noqa: F401
 
     assert "runpod" not in sys.modules
+
+
+# --- Клонирование голоса (Base) ---------------------------------------------
+
+
+def test_clone_job_passes_reference_to_engine_and_reports_telemetry(setup) -> None:
+    downloader = FakeReferenceDownloader({REFERENCE_URL: REFERENCE_BYTES})
+    decoder = FakeReferenceDecoder(pcm=REFERENCE_PCM, duration_seconds=3.0)
+    handler, engine, _aligner, _normalizer = _clone_handler(
+        setup, downloader=downloader, decoder=decoder
+    )
+    result = _run(handler(_clone_job()))
+
+    assert downloader.urls == [REFERENCE_URL]
+    assert decoder.calls == [REFERENCE_BYTES]
+    call = engine.calls[0]
+    assert call["voice"]["mode"] == "clone"
+    reference = call["reference"]
+    assert reference is not None
+    assert reference.pcm is REFERENCE_PCM
+    assert reference.sample_rate == 24000
+    assert reference.sha256 == REFERENCE_SHA
+    assert reference.text == "Проверка голоса для клонирования."
+    assert reference.duration_seconds == pytest.approx(3.0)
+
+    telemetry = result["telemetry"]
+    assert telemetry["voice_mode"] == "clone"
+    assert telemetry["reference_hash"] == REFERENCE_SHA
+    assert telemetry["engine"] == "qwen3_tts"
+    _output_validator().validate(result)
+
+
+def test_preset_telemetry_is_preset_without_reference_hash(setup) -> None:
+    handler, engine, _aligner, _normalizer = _handler(setup)
+    result = _run(handler(_job()))
+    assert engine.calls[0]["reference"] is None
+    assert result["telemetry"]["voice_mode"] == "preset"
+    assert result["telemetry"]["reference_hash"] is None
+    _output_validator().validate(result)
+
+
+def test_clone_hash_mismatch_is_visible_and_engine_is_not_called(setup) -> None:
+    handler, engine, _aligner, _normalizer = _clone_handler(setup)
+    with pytest.raises(WorkerError) as error:
+        _run(handler(_clone_job(sha256="b" * 64)))
+    assert error.value.code == "reference_hash"
+    assert REFERENCE_SHA in error.value.message or "sha256" in error.value.message
+    assert engine.calls == []
+
+
+def test_clone_too_large_is_visible(setup, monkeypatch) -> None:
+    import tts_worker.reference as reference_module
+
+    monkeypatch.setattr(reference_module, "MAX_REFERENCE_BYTES", len(REFERENCE_BYTES) - 1)
+    # Выше лимита режет и prepare_reference (кастомный загрузчик обходит httpx).
+    handler, engine, _aligner, _normalizer = _clone_handler(
+        setup, downloader=FakeReferenceDownloader({REFERENCE_URL: REFERENCE_BYTES})
+    )
+    with pytest.raises(WorkerError) as error:
+        _run(handler(_clone_job()))
+    assert error.value.code == "reference_too_large"
+    assert engine.calls == []
+
+
+@pytest.mark.parametrize("duration", [0.5, 20.0, 0.0])
+def test_clone_reference_duration_out_of_range(setup, duration: float) -> None:
+    handler, engine, _aligner, _normalizer = _clone_handler(
+        setup, decoder=FakeReferenceDecoder(duration_seconds=duration)
+    )
+    with pytest.raises(WorkerError) as error:
+        _run(handler(_clone_job()))
+    assert error.value.code == "reference_invalid"
+    assert engine.calls == []
+
+
+def test_clone_download_failure_is_visible_without_url_in_message(setup) -> None:
+    failure = WorkerError("reference_invalid", "скачивание референса: HTTP 403")
+    downloader = FakeReferenceDownloader(error=failure)
+    handler, engine, _aligner, _normalizer = _clone_handler(setup, downloader=downloader)
+    with pytest.raises(WorkerError) as error:
+        _run(handler(_clone_job()))
+    assert error.value.code == "reference_invalid"
+    assert REFERENCE_URL not in str(error.value)
+    assert engine.calls == []
+
+
+def test_clone_decoder_failure_is_visible(setup) -> None:
+    handler, engine, _aligner, _normalizer = _clone_handler(
+        setup, decoder=FakeReferenceDecoder(error=ValueError("битый контейнер"))
+    )
+    with pytest.raises(WorkerError) as error:
+        _run(handler(_clone_job()))
+    assert error.value.code == "reference_invalid"
+    assert engine.calls == []
+
+
+def test_clone_reference_url_must_be_http_schema_rejects_ftp(setup) -> None:
+    handler, engine, _aligner, _normalizer = _clone_handler(setup)
+    with pytest.raises(WorkerError) as error:
+        _run(handler(_clone_job(url="ftp://files.example/ref.wav")))
+    assert error.value.code == "input_invalid"
+    assert engine.calls == []
+
+
+def test_clone_without_reference_is_input_invalid(setup) -> None:
+    handler, engine, _aligner, _normalizer = _clone_handler(setup)
+    job = _job()
+    job["input"]["voice"] = {"mode": "clone"}
+    with pytest.raises(WorkerError) as error:
+        _run(handler(job))
+    assert error.value.code == "input_invalid"
+    assert engine.calls == []
+
+
+def test_prepare_reference_without_reference_is_reference_missing(setup) -> None:
+    downloader = FakeReferenceDownloader()
+    decoder = FakeReferenceDecoder()
+    with pytest.raises(WorkerError) as error:
+        _run(prepare_reference({"mode": "clone"}, downloader=downloader, decoder=decoder))
+    assert error.value.code == "reference_missing"
+    assert downloader.urls == []
+
+
+def test_clone_logs_hash_but_not_reference_url(setup, caplog) -> None:
+    handler, _engine, _aligner, _normalizer = _clone_handler(setup)
+    with caplog.at_level(logging.INFO, logger="tts_worker.handler"):
+        _run(handler(_clone_job()))
+    assert REFERENCE_SHA in caplog.text
+    assert REFERENCE_URL not in caplog.text
+
+
+@pytest.mark.parametrize("mode", ["preset", "design"])
+def test_engine_rejects_non_clone_modes_on_base(setup, mode: str) -> None:
+    _config, _manifest, models_root = setup
+    engine = Qwen3TtsEngine(models_root / "qwen3-tts-1.7b", "qwen3-tts@fake")
+    handler, _engine, _aligner, _normalizer = _handler(setup, engine=engine)
+    job = _job()
+    job["input"]["voice"] = (
+        {"mode": "preset", "speaker_id": 0} if mode == "preset" else {"mode": "clone"}
+    )
+    with pytest.raises(WorkerError) as error:
+        _run(handler(job))
+    # preset: схема валидна, движок Base обязан дать voice_mode_unsupported
+    # (никакого тихого перехода на пресет); design схемой уже отсекается.
+    assert error.value.code in {"voice_mode_unsupported", "input_invalid"}
+
+
+def test_preset_on_base_fails_visibly_without_loading_the_model(setup) -> None:
+    _config, _manifest, models_root = setup
+    engine = Qwen3TtsEngine(models_root / "qwen3-tts-1.7b", "qwen3-tts@fake")
+    handler, _engine, _aligner, _normalizer = _handler(setup, engine=engine)
+    with pytest.raises(WorkerError) as error:
+        _run(handler(_job()))
+    assert error.value.code == "voice_mode_unsupported"
+    assert engine._model is None
+
+
+def test_clone_without_gpu_runtime_is_engine_unavailable(setup) -> None:
+    _config, _manifest, models_root = setup
+    engine = Qwen3TtsEngine(models_root / "qwen3-tts-1.7b", "qwen3-tts@fake")
+    handler, _engine, _aligner, _normalizer = _clone_handler(setup, engine=engine)
+    with pytest.raises(WorkerError) as error:
+        _run(handler(_clone_job()))
+    # В тестовом окружении нет torch/qwen-tts: видимый код, не ImportError и не
+    # подмена пресетом.
+    assert error.value.code == "engine_unavailable"
