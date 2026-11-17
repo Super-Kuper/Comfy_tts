@@ -4,6 +4,20 @@
 [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии —
 [SemVer](https://semver.org/lang/ru/).
 
+## [0.3.2] — 2026-11-17
+
+Исправлен Hub-билд: Debian `cryptography` без RECORD.
+
+### Исправлено
+
+- RunPod PyTorch база ставит `cryptography 41.0.7` из Debian (без RECORD);
+  `pip install runpod==2.2.1` требует `cryptography>=50` и падал с
+  `error: uninstall-no-record-file` при попытке удалить системный пакет.
+- Теперь `cryptography` и `runpod` ставятся с `--ignore-installed`: новые копии
+  в `/usr/local/lib/python3.12/dist-packages`, системный Debian-пакет не
+  удаляется. Остальные пины и базовый образ не менялись.
+- Версия `0.3.2`; контракт, handler, движок и тесты не менялись.
+
 ## [0.3.1] — 2026-11-17
 
 Исправлен Hub-билд: RunPod PyTorch база вместо `pytorch/pytorch`.

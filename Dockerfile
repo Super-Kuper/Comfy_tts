@@ -30,7 +30,7 @@ ARG BASE_IMAGE=runpod/pytorch:2.2.0-rc.229-cu1281-torch291-ubuntu2404
 
 FROM ${BASE_IMAGE}
 
-ARG TTS_WORKER_VERSION=0.3.1
+ARG TTS_WORKER_VERSION=0.3.2
 # auto: install the Qwen3-TTS runtime only when the base image already carries
 # torch (the real CUDA image). 1/0 force it. The python:3.12-slim stub keeps
 # `auto` -> 0, so the structural build stays fast and GPU-free.
@@ -66,7 +66,12 @@ RUN set -eux; \
     if [ "${runtime}" = "auto" ]; then \
         if "${py}" -c "import torch" >/dev/null 2>&1; then runtime=1; else runtime=0; fi; \
     fi; \
-    "${py}" -m pip install --no-cache-dir \
+    # RunPod-база ставит Debian-пакет cryptography без RECORD; pip не может
+    # его удалить, а runpod требует cryptography>=50. Ставим новую версию с
+    # --ignore-installed (в /usr/local, без uninstall системной) и сам runpod
+    # тоже с --ignore-installed, чтобы не было uninstall-no-record-file.
+    "${py}" -m pip install --no-cache-dir --ignore-installed "cryptography>=50.0.2"; \
+    "${py}" -m pip install --no-cache-dir --ignore-installed \
         "runpod==2.2.1" "httpx>=0.27,<0.29" "jsonschema>=4.21" "boto3>=1.35"; \
     if [ "${runtime}" = "1" ]; then \
         "${py}" -m pip install --no-cache-dir \
