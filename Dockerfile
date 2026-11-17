@@ -26,7 +26,7 @@ ARG BASE_IMAGE=python:3.12-slim
 
 FROM ${BASE_IMAGE}
 
-ARG TTS_WORKER_VERSION=0.2.2
+ARG TTS_WORKER_VERSION=0.2.3
 
 # VOLUME_AUTOPOPULATE=true — автоскачивание pinned-весов Qwen3-TTS/GigaAM на
 # том при старте (docker/entrypoint.sh); false — только ручной populate.

@@ -9,14 +9,16 @@
     }
   ],
   "config": {
-    "gpuTypeId": "NVIDIA GeForce RTX 4090",
+    "gpuTypeId": "NVIDIA H100 80GB HBM3",
     "gpuCount": 1,
-    "env": [],
+    "env": [
+      {
+        "key": "VOLUME_AUTOPOPULATE",
+        "value": "false"
+      }
+    ],
     "allowedCudaVersions": [
-      "13.2",
-      "13.0",
-      "12.6",
-      "12.4"
+      "13.2"
     ]
   }
 }

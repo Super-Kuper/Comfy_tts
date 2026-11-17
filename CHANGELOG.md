@@ -4,6 +4,23 @@
 [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии —
 [SemVer](https://semver.org/lang/ru/).
 
+## [0.2.3] — 2026-11-17
+
+Исправлен Hub-билд: test pod на H100 80GB вместо недоступной RTX 4090.
+
+### Исправлено
+
+- **Причина:** `.runpod/tests.json` просил `NVIDIA GeForce RTX 4090`; в момент
+  сборки не было ни её инстансов, ни fallback-карт (`B300 SXM6 AC MIG 1g.34gb`,
+  `RTX PRO 4500 Blackwell`). Ошибка RunPod Hub:
+  `There were no instances available for your specified GPU ...`.
+- **`tts`:** test pod — `NVIDIA H100 80GB HBM3` (CUDA 13.2; сток подтверждён
+  сборкой audio-воркера). Тестовый pod не подключает том, поэтому
+  `VOLUME_AUTOPOPULATE=false` — health не ждёт скачивания.
+- Пулы листинга Hub расширены `ADA_48_PRO`/`ADA_80_PRO`, чтобы тестовая карта
+  входила в опубликованные пулы; практические 24–48-ГБ пулы сохранены.
+- Версия `0.2.3`; контракт, обработчик, тесты и манифест не менялись.
+
 ## [0.2.2] — 2026-11-17
 
 Живой entrypoint: авто-популяция тома перед handler.
