@@ -37,7 +37,7 @@ engine (contract §1.1), no routing in a single worker and no silent fallback.
    `VOLUME_AUTOPOPULATE=false` to prepare the volume manually from a CPU pod
    (`MODELS_ROOT=/runpod-volume/models ./populate-volume.sh`).
 3. **Build and push the image.** Default base is the pinned CUDA/PyTorch runtime
-   `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime`; the image installs pinned
+   `runpod/pytorch:2.2.0-rc.229-cu1281-torch291-ubuntu2404`; the image installs pinned
    `qwen-tts==0.1.1`, `transformers==4.57.3`, `soundfile==0.13.1`,
    `librosa==0.11.0` (torch comes from the base and is never reinstalled). The
    image carries no weights. A GPU-free structural build is available:

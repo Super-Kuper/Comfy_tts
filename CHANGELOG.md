@@ -4,6 +4,24 @@
 [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии —
 [SemVer](https://semver.org/lang/ru/).
 
+## [0.3.1] — 2026-11-17
+
+Исправлен Hub-билд: RunPod PyTorch база вместо `pytorch/pytorch`.
+
+### Исправлено
+
+- v0.3.0 не собрался в RunPod Hub (успешный clone, затем падение на этапе
+  сборки; точный лог в консоли Hub). Базовый образ заменён на официальный
+  RunPod `runpod/pytorch:2.2.0-rc.229-cu1281-torch291-ubuntu2404`
+  (CUDA 12.8, torch 2.9.1): RunPod-сборщик тянет RunPod-образы из своего
+  registry/кэша, а не общий Docker Hub `pytorch/pytorch` (риск rate limit /
+  долгого pull).
+- `torchaudio` ставится только если его нет в базе (теперь `2.9.1 --no-deps`);
+  остальные пины (`qwen-tts==0.1.1`, `transformers==4.57.3`, `soundfile`,
+  `librosa`) не менялись.
+- Версия `0.3.1`; контракт, handler, скачивание/проверка референса, движок и
+  тесты не менялись.
+
 ## [0.3.0] — 2026-11-17
 
 Base-клонирование голоса (Qwen3-TTS 1.7B Base): контракт `tts-serverless/v1`
