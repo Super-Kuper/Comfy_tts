@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tts-serverless-worker"
-version = "0.3.4"
+version = "0.3.5"
 description = "RunPod serverless worker for Russian TTS (Qwen3-TTS 1.7B Base voice cloning) with GigaAM-v3 word timestamps/WER — contract tts-serverless/v1"
 readme = "README.md"
 requires-python = ">=3.11"

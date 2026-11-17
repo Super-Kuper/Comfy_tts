@@ -4,6 +4,20 @@
 [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии —
 [SemVer](https://semver.org/lang/ru/).
 
+## [0.3.5] — 2026-11-17
+
+Hub-тест: GPU с фактическим стоком (A100 SXM 80GB).
+
+### Исправлено
+
+- Hub-тест `.runpod/tests.json` просил `NVIDIA H100 80GB HBM3` и fallback
+  H100 NVL/PCIe — все вернули `supply constraints` (нет инстансов).
+- Тест переведён на `NVIDIA A100-SXM4-80GB`; доступность проверена реальным
+  `POST /v2/pods` (SECURE, CUDA 13.2) с последующим terminate.
+- `allowedCudaVersions` — `13.2`/`13.0`; в `hub.json` добавлен пул `AMPERE_80`,
+  чтобы тестовая карта входила в опубликованные пулы.
+- Версия образа воркера `0.3.5`; код/контракт/база `0.3.4` не менялись.
+
 ## [0.3.4] — 2026-11-17
 
 Предсобранный base-образ + тонкий Dockerfile.

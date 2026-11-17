@@ -9,7 +9,7 @@
     }
   ],
   "config": {
-    "gpuTypeId": "NVIDIA H100 80GB HBM3",
+    "gpuTypeId": "NVIDIA A100-SXM4-80GB",
     "gpuCount": 1,
     "env": [
       {
@@ -18,7 +18,8 @@
       }
     ],
     "allowedCudaVersions": [
-      "13.2"
+      "13.2",
+      "13.0"
     ]
   }
 }
