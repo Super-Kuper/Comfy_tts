@@ -1,0 +1,34 @@
+{
+  "version": "ru-normalization@2026-11-16",
+  "language": "ru",
+  "note": "Pinned baseline of the Russian TTS normalization dictionaries. Data, not code: fix a rule by creating a new version of this file (the worker image pins the file). The production dictionary set is the platform data catalogue (docs/tasks/2026-11-16-audio-sfx-tts.md §10); this file is the worker-side baseline until the single-source-of-truth export lands. Gender/number agreement for numerals (один/одна) is intentionally not guessed: uncovered forms stay as written and are visible to QC.",
+  "abbreviations": {
+    "т.д.": "так далее",
+    "т.п.": "тому подобное",
+    "т.е.": "то есть",
+    "ул.": "улица",
+    "пр-т": "проспект",
+    "д.": "дом",
+    "г.": "город",
+    "м.": "метров",
+    "мин.": "минут",
+    "сек.": "секунд",
+    "руб.": "рублей"
+  },
+  "brands": {
+    "VK": "ВКонтакте",
+    "YouTube": "Ютуб",
+    "Yandex": "Яндекс"
+  },
+  "stress": {
+    "замок": "за́мок",
+    "звонит": "звони́т",
+    "красивее": "краси́вее"
+  },
+  "numbers": {
+    "units": ["ноль", "один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять"],
+    "teens": ["десять", "одиннадцать", "двенадцать", "тринадцать", "четырнадцать", "пятнадцать", "шестнадцать", "семнадцать", "восемнадцать", "девятнадцать"],
+    "tens": ["", "", "двадцать", "тридцать", "сорок", "пятьдесят", "шестьдесят", "семьдесят", "восемьдесят", "девяносто"],
+    "hundreds": ["", "сто", "двести", "триста", "четыреста", "пятьсот", "шестьсот", "семьсот", "восемьсот", "девятьсот"]
+  }
+}
