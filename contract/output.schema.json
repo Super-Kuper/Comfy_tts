@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/tts-serverless/output.schema.json",
+  "title": "TTS serverless worker output (tts-serverless/v1)",
+  "description": "Result of one phrase job: 1–2 takes (each with exactly one of audio_b64/audio_url), GigaAM word timestamps/WER and execution-fact telemetry.",
+  "type": "object",
+  "required": [
+    "request_id",
+    "takes",
+    "telemetry"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Echo of input.request_id."
+    },
+    "takes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "required": [
+          "take",
+          "duration_seconds",
+          "sample_rate",
+          "channels",
+          "seed",
+          "words",
+          "wer"
+        ],
+        "properties": {
+          "take": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2,
+            "description": "1-based take index."
+          },
+          "audio_b64": {
+            "type": "string",
+            "minLength": 1,
+            "contentEncoding": "base64",
+            "description": "Base64 WAV bytes for results within OUTPUT_INLINE_MAX_MB / OUTPUT_INLINE_BUDGET_MB."
+          },
+          "audio_url": {
+            "type": "string",
+            "pattern": "^https?://",
+            "description": "Presigned HTTP(S) URL for results uploaded to S3-compatible storage."
+          },
+          "duration_seconds": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Fact duration read from the take's WAV header — not the window length."
+          },
+          "sample_rate": {
+            "type": "integer",
+            "minimum": 4000,
+            "description": "Fact sample rate from the take's header."
+          },
+          "channels": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8,
+            "description": "Fact channel count from the take's header."
+          },
+          "seed": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Seed actually used by the engine for this take (null when the engine reports none)."
+          },
+          "words": {
+            "type": "array",
+            "description": "Word timestamps from GigaAM-v3 (absolute ms from the take start), not from the TTS model. Empty when the aligner is disabled or word_timestamps=false.",
+            "items": {
+              "type": "object",
+              "required": [
+                "text",
+                "start_ms",
+                "end_ms"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Recognized word."
+                },
+                "start_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Word start in milliseconds from the take start."
+                },
+                "end_ms": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "description": "Word end in milliseconds from the take start; > start_ms."
+                },
+                "accent": {
+                  "type": "string",
+                  "description": "Optional stress mark from the aligner/dictionary data."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "wer": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1,
+            "description": "GigaAM-v3 word error rate against the normalized phrase; null when the aligner is disabled."
+          }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "audio_b64"
+            ]
+          },
+          {
+            "required": [
+              "audio_url"
+            ]
+          }
+        ],
+        "not": {
+          "required": [
+            "audio_b64",
+            "audio_url"
+          ]
+        },
+        "additionalProperties": false
+      }
+    },
+    "telemetry": {
+      "type": "object",
+      "description": "Execution-fact telemetry. Versions, hash, seconds and license come from the loaded engine/aligner and the pinned weight files on the volume; input fields are never substituted.",
+      "required": [
+        "engine",
+        "engine_version",
+        "aligner_version",
+        "model_hash",
+        "gpu_seconds",
+        "license"
+      ],
+      "properties": {
+        "engine": {
+          "type": "string",
+          "enum": [
+            "qwen3_tts",
+            "chatterbox"
+          ],
+          "description": "TTS engine id of the executed image. This worker reports qwen3_tts (Chatterbox, if ever enabled, is a separate image/stand)."
+        },
+        "engine_version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Version of the loaded TTS engine/model, e.g. qwen3-tts-12hz-1.7b@2026-01."
+        },
+        "aligner_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "description": "Version of the aligner that actually ran, e.g. gigaam-v3@2026-04; null when aligner.enabled=false."
+        },
+        "model_hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "Measured sha256 of the executed TTS weight file, prefixed with sha256:."
+        },
+        "gpu_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Measured wall-clock seconds of synthesis + alignment."
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "description": "License identifier of the executed TTS weights, from the pinned manifest row (Apache-2.0 for Qwen3-TTS)."
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

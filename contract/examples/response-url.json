@@ -1,0 +1,23 @@
+{
+  "request_id": "3f6c2b7a-1d0e-4c55-9a77-2b1cd4a9e001",
+  "takes": [
+    {
+      "take": 1,
+      "audio_url": "https://storage.example/voiceover/take-1.wav?X-Amz-Signature=example",
+      "duration_seconds": 2.1,
+      "sample_rate": 48000,
+      "channels": 2,
+      "seed": null,
+      "words": [],
+      "wer": null
+    }
+  ],
+  "telemetry": {
+    "engine": "qwen3_tts",
+    "engine_version": "qwen3-tts-12hz-1.7b@2026-01",
+    "aligner_version": null,
+    "model_hash": "sha256:38fc7fc51c5e776e840414b6fd443962e9411b9654888fd7913e4da643cb857c",
+    "gpu_seconds": 0.9,
+    "license": "Apache-2.0"
+  }
+}

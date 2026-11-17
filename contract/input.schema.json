@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/tts-serverless/input.schema.json",
+  "title": "TTS serverless worker input (tts-serverless/v1)",
+  "description": "RunPod serverless input: one Russian phrase, voice/parameter snapshot and render/aligner settings. The worker loads the pinned Qwen3-TTS model from its own image/volume and never receives a model choice.",
+  "type": "object",
+  "required": [
+    "input"
+  ],
+  "properties": {
+    "input": {
+      "type": "object",
+      "required": [
+        "request_id",
+        "text",
+        "language",
+        "voice",
+        "render"
+      ],
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+          "description": "Application request UUID; echoed back in the output so batched phrase runs can be matched."
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "description": "Phrase text. Normalization (numbers, abbreviations, brands, stress — data dictionaries) happens inside the worker (contract §1.2)."
+        },
+        "language": {
+          "type": "string",
+          "enum": [
+            "ru"
+          ],
+          "description": "Voice language of the phrase; the product voices are Russian."
+        },
+        "voice": {
+          "type": "object",
+          "required": [
+            "mode",
+            "speaker_id"
+          ],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "preset"
+              ],
+              "description": "Voice mode. v1 has presets only; clone/VoiceDesign are additive later."
+            },
+            "speaker_id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 99,
+              "description": "Preset speaker index in the pinned model's voice catalog."
+            }
+          },
+          "additionalProperties": false
+        },
+        "speed": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 2.0,
+          "description": "Speech speed factor. Default 1.0."
+        },
+        "takes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2,
+          "description": "Number of takes to synthesize (plan §7.2: 1–2). Default 1."
+        },
+        "seed": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Optional seed; null means the engine's default sampling. The reported take seed is the execution fact."
+        },
+        "window": {
+          "type": "object",
+          "required": [
+            "start",
+            "end"
+          ],
+          "properties": {
+            "start": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Phrase window start on the scenario timeline (seconds)."
+            },
+            "end": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Phrase window end on the scenario timeline (seconds); must be > start."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Tracing data only: the worker does NOT fit/stretch the phrase to the window (contract §1.3). Overflow is handled by the service."
+        },
+        "render": {
+          "type": "object",
+          "required": [
+            "sample_rate",
+            "channels",
+            "format"
+          ],
+          "properties": {
+            "sample_rate": {
+              "type": "integer",
+              "enum": [
+                22050,
+                24000,
+                32000,
+                44100,
+                48000
+              ],
+              "description": "Requested output sample rate. Qwen3-TTS is 24 kHz native; resampling is the engine boundary's job."
+            },
+            "channels": {
+              "type": "integer",
+              "enum": [
+                1,
+                2
+              ],
+              "description": "Requested output channel count."
+            },
+            "format": {
+              "type": "string",
+              "enum": [
+                "wav"
+              ],
+              "description": "Container format. v1 is WAV (PCM); mp3/opus are additive later."
+            }
+          },
+          "additionalProperties": false
+        },
+        "aligner": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Run the GigaAM-v3 aligner/QC (words + WER). Default true. When false: words=[] and wer=null in the output."
+            },
+            "word_timestamps": {
+              "type": "boolean",
+              "description": "Return word timestamps. Default true. With enabled=true and false: WER is still measured, words are [] (aligner runs, timings omitted)."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Optional; defaults are {\"enabled\": true, \"word_timestamps\": true}."
+        }
+      },
+      "additionalProperties": false
+    },
+    "policy": {
+      "type": "object",
+      "description": "Optional RunPod policy (executionTimeout/ttl). The worker does not read it; RunPod applies it before the handler runs.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
