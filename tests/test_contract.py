@@ -291,3 +291,19 @@ def test_unknown_output_field_is_rejected(output_validator: Draft202012Validator
     take = copy.deepcopy(VALID_TAKE)
     take["model"] = "qwen3-tts"
     _assert_invalid(output_validator, _output(takes=[take]))
+
+
+def test_health_request_example_is_valid(input_validator: Draft202012Validator) -> None:
+    input_validator.validate(load_json(contract_dir() / "examples" / "health.request.json"))
+
+
+def test_health_allows_no_phrase_fields(input_validator: Draft202012Validator) -> None:
+    input_validator.validate({"input": {"action": "health"}})
+
+
+def test_health_response_shape() -> None:
+    payload = load_json(contract_dir() / "examples" / "health.response.json")
+    assert payload["status"] in {"ok", "starting", "degraded"}
+    assert isinstance(payload["volume_mounted"], bool)
+    assert payload["engine"] in {"ready", "missing"}
+    assert payload["aligner"] in {"ready", "missing"}

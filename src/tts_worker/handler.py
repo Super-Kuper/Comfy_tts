@@ -11,7 +11,7 @@ word timestamps/WER → телеметрия из исполнения → до�
 Внешние зависимости инъектируются (``build_handler``/``Dependencies``): тесты
 идут без GPU, сети, torch и runpod.
 
-Ссылки: `contract/worker-contract.md` §1/§2/§3.
+Ссылки: `contract/worker-contract.md` §1/§2/§4.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from .config import Config
 from .contract import validate_input, validate_output
 from .engine import SynthesisTake, TtsEngine
 from .errors import WorkerError
+from .health import health_payload
 from .manifest import ModelFile, ModelManifest, sha256_file
 from .normalization import Normalizer
 from .storage import AudioStorage, S3Storage, deliver_audio
@@ -108,6 +109,9 @@ async def execute(job: Any, deps: Dependencies) -> dict[str, Any]:
     # к нему ``id`` (top-level additionalProperties: true).
     validate_input(job, deps.config.contract_dir)
     inp = payload
+
+    if payload.get("action") == "health":
+        return health_payload(deps.config, deps.manifest)
 
     text = inp.get("text")
     if not isinstance(text, str) or not text:

@@ -132,7 +132,32 @@ A fact that cannot be measured fails the job with `telemetry_missing`; expected
 values are never substituted. The aligner weight file is verified against the
 pinned manifest too (a mismatch is `provision_hash_mismatch`).
 
-## 3. Errors and cancellation
+## 3. Health
+
+Request (`POST /run`):
+
+```json
+{"input": {"action": "health"}}
+```
+
+Response:
+
+```json
+{"status": "ok", "volume_mounted": true, "engine": "ready", "aligner": "ready"}
+```
+
+- `status`: `ok` (network volume mounted and both pinned files present),
+  `starting` (volume mounted but the engine/aligner files are still being
+  populated — normal cold-start state) or `degraded` (volume not mounted).
+- `volume_mounted`: whether `VOLUME_ROOT` exists.
+- `engine` / `aligner`: `ready` when the pinned file from `models-manifest.txt`
+  is on the volume, `missing` otherwise.
+- Health does not hash weights, does not load a model and does not run
+  synthesis or alignment, so the phrase fields are not required with
+  `action: health`; it is safe as an endpoint smoke test and for diagnostics.
+  RunPod Hub runs it on build ([`.runpod/tests.json`](../.runpod/tests.json)).
+
+## 4. Errors and cancellation
 
 Any handler error fails the RunPod job (`FAILED`); error codes are stable
 lowercase identifiers:
@@ -152,7 +177,7 @@ lowercase identifiers:
   [`output.schema.json`](output.schema.json) before returning; a schema
   violation is `output_invalid`.
 
-## 4. Environment
+## 5. Environment
 
 The worker reads its settings from endpoint environment variables. Invalid values
 fail the job with `config_invalid` and the variable name.
@@ -173,7 +198,7 @@ fail the job with `config_invalid` and the variable name.
 environment, never in the image, the repository or logs. Weights live on the
 network volume (`models-manifest.txt`, `populate-volume.sh`), never in the image.
 
-## 5. Version
+## 6. Version
 
 Current contract version: **`tts-serverless/v1`**. Input and output are additive
 within a minor version. An incompatible change requires a new contract version

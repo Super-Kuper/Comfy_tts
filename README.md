@@ -36,12 +36,18 @@ engine (contract §1.1), no routing in a single worker and no silent fallback.
 3. **Build and push the image.** Requires a CUDA runtime base with pinned
    torch + Qwen3-TTS/GigaAM runtime packages (TODO(live) in the
    [Dockerfile](Dockerfile)); the image carries no weights.
-4. **Create the serverless endpoint** for the `tts` stand: endpoint type
+4. **Publish on RunPod Hub (optional).** The Hub listing metadata is
+   [`.runpod/hub.json`](.runpod/hub.json) (GPU pool `ADA_24,AMPERE_48`,
+   CUDA 12.8–13.0, 25 GB container disk, endpoint env vars) and the build test
+   is [`.runpod/tests.json`](.runpod/tests.json) — it runs the health action.
+5. **Create the serverless endpoint** for the `tts` stand: endpoint type
    `QUEUE`, **`workers.max = 1`**, idle timeout 60–120 s, FlashBoot, endpoint
    timeout ≥ `policy.executionTimeout`. TTS batch = all phrase jobs of one
    voiceover request, so the 3–10 min cold start is amortized by the batch.
-5. **Smoke-test** with `contract/examples/request.json` on a warm worker, then
-   the RU quality pilot (plan §11) before enabling authors.
+6. **Smoke-test** with `contract/examples/request.json` on a warm worker and
+   with the health action (see [Health](#health)); the Hub build test runs the
+   same health request, then the RU quality pilot (plan §11) before enabling
+   authors.
 
 ## Job input / output
 
@@ -82,6 +88,25 @@ error, never a success. Full details and error codes:
 [contract](contract/worker-contract.md). Examples:
 [`contract/examples/`](contract/examples/).
 
+## Health
+
+Request (`POST /run`): `{"input": {"action": "health"}}`
+
+```json
+{"status": "ok", "volume_mounted": true, "engine": "ready", "aligner": "ready"}
+```
+
+- `status`: `ok` (volume mounted, both pinned files present), `starting` (volume
+  mounted but the engine/aligner files are still being populated — normal
+  cold-start state) or `degraded` (volume not mounted);
+- `volume_mounted`: whether `VOLUME_ROOT` exists;
+- `engine` / `aligner`: `ready` when the pinned file from `models-manifest.txt`
+  is on the volume, `missing` otherwise.
+
+Health only checks the volume and file presence: it does not hash weights, load
+a model or run synthesis/alignment. RunPod Hub runs it on build
+([`.runpod/tests.json`](.runpod/tests.json)).
+
 ## Environment
 
 Secrets only in the endpoint env; never in the image/repository/logs.
@@ -107,7 +132,10 @@ WAV facts, GigaAM words/WER from a mock aligner), empty result and broken audio
 errors, "the worker does not choose a model" (strict input schema + engine from
 the image), normalization (numbers/abbreviations/brands/stress from the data
 file), window non-fitting, aligner-disabled semantics and the pinned model
-manifest. Local test deps: `pytest`, `jsonschema` (see `pyproject.toml`).
+manifest. Health statuses (volume and pinned-file presence, no synthesis) are
+covered too. Local test deps: `pytest`, `jsonschema` (see `pyproject.toml`).
+
+`.runpod/` holds the RunPod Hub listing (`hub.json`) and the build test (`tests.json`).
 
 ## Remaining live steps (not in this repository yet)
 

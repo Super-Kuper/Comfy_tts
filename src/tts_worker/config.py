@@ -1,7 +1,7 @@
 """Настройки TTS-воркера из env endpoint'а.
 
 Секретов в образе нет: S3-ключи приходят только из env. Невалидное значение
-даёт ``config_invalid`` с именем переменной (contract §4).
+даёт ``config_invalid`` с именем переменной (contract §5).
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ def _boolean(source: Mapping[str, str], name: str, default: bool) -> bool:
 
 @dataclass(frozen=True)
 class Config:
-    """Настройки одного endpoint'а (значения по умолчанию — как в contract §4)."""
+    """Настройки одного endpoint'а (значения по умолчанию — как в contract §5)."""
 
     volume_root: Path = Path("/runpod-volume")
     models_root: Path = Path("/runpod-volume/models")
