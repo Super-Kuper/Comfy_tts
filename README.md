@@ -36,14 +36,25 @@ engine (contract §1.1), no routing in a single worker and no silent fallback.
    sha256 is verified; unpinned URLs/`main` are refused before GPU work. Set
    `VOLUME_AUTOPOPULATE=false` to prepare the volume manually from a CPU pod
    (`MODELS_ROOT=/runpod-volume/models ./populate-volume.sh`).
-3. **Build and push the image.** Default base is the pinned CUDA/PyTorch runtime
-   `runpod/pytorch:2.2.0-rc.229-cu1281-torch291-ubuntu2404`; the image installs pinned
-   `qwen-tts==0.1.1`, `transformers==4.57.3`, `soundfile==0.13.1`,
-   `librosa==0.11.0` (torch comes from the base and is never reinstalled). The
-   image carries no weights. A GPU-free structural build is available:
-   `docker build --build-arg BASE_IMAGE=python:3.12-slim -t tts-serverless:stub .`
-   (the model runtime is skipped because the stub base has no torch; a real job
-   on it fails visibly with `engine_unavailable`).
+3. **Use the prebuilt base image (recommended).** The heavy CUDA/PyTorch/
+   qwen-tts layer is published once as
+   `crappytackle/tts-serverless-base:0.3.4`; the repository `Dockerfile` only
+   does `FROM` it and `COPY` the worker code. This keeps Hub builds inside the
+   30-minute `docker build` limit:
+   ```bash
+   docker build -t crappytackle/tts-serverless:0.3.4 .
+   docker push crappytackle/tts-serverless:0.3.4
+   ```
+   Rebuild/push the base only when dependencies change:
+   ```bash
+   IMAGE=crappytackle/tts-serverless-base:0.3.4 scripts/build-base.sh
+   ```
+   The base recipe is [`docker/Dockerfile.base`](docker/Dockerfile.base)
+   (CUDA/PyTorch 2.7.1, `qwen-tts==0.1.1`, `transformers==4.57.3`,
+   `soundfile`, `librosa`). No model weights are baked into the image — they
+   stay on the network volume. A ready-to-use worker image is also published
+   as `crappytackle/tts-serverless:0.3.4`; an endpoint can point at it directly,
+   bypassing Hub builds.
 4. **Publish on RunPod Hub (optional).** The Hub listing metadata is
    [`.runpod/hub.json`](.runpod/hub.json) (40 GB container disk; GPU pools
    `ADA_24,AMPERE_24,AMPERE_48,ADA_48_PRO,ADA_80_PRO`; host CUDA `13.2`/`13.0`

@@ -1,0 +1,56 @@
+# =============================================================================
+# Prebuilt base image for `tts-serverless` (Qwen3-TTS Base).
+#
+# Почему отдельный образ: Hub GitHub-билд имеет 30-минутный лимит на
+# `docker build`; установка CUDA/PyTorch/qwen-tts в каждом релизе занимает
+# больше времени, чем сборка слоя с кодом. Этот base собирается один раз,
+# пушится в Docker Hub, а корневой Dockerfile только `FROM` него и `COPY`
+# кода воркера.
+#
+# Сборка и публикация:
+#   docker build -f docker/Dockerfile.base \
+#     -t crappytackle/tts-serverless-base:0.3.4 .
+#   docker push crappytackle/tts-serverless-base:0.3.4
+#
+# Размер: ~4.2 ГБ сжатой базы PyTorch/CUDA + слой зависимостей. Веса модели
+# сюда НЕ входят: они лежат на network volume (`/runpod-volume/models`).
+# =============================================================================
+ARG BASE_IMAGE=pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
+
+FROM ${BASE_IMAGE}
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    TERM=xterm
+
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends curl ca-certificates sox libsox-fmt-all; \
+    rm -rf /var/lib/apt/lists/*
+
+# Worker dependencies. `cryptography`/`runpod` ставятся с --ignore-installed:
+# в Debian-слое бывает cryptography без RECORD-файла, и обычный pip пытается
+# его удалить (`uninstall-no-record-file`). Новые копии кладутся в
+# /usr/local, системный пакет не трогаем.
+RUN set -eux; \
+    py="$(command -v python3 || command -v python)"; \
+    "${py}" -m pip install --no-cache-dir --ignore-installed "cryptography>=50.0.2"; \
+    "${py}" -m pip install --no-cache-dir --ignore-installed \
+        "runpod==2.2.1" "httpx>=0.27,<0.29" "jsonschema>=4.21" "boto3>=1.35"
+
+# Qwen3-TTS runtime. qwen-tts ставится без зависимостей, чтобы не тянуть
+# gradio/demo; runtime-пакеты (включая sox/onnxruntime, которые импортирует
+# qwen_tts.core) ставятся явно и запинены.
+RUN set -eux; \
+    py="$(command -v python3 || command -v python)"; \
+    "${py}" -m pip install --no-cache-dir \
+        "transformers==4.57.3" "accelerate==1.12.0" "einops>=0.8,<0.9" \
+        "numpy>=1.26,<3" "soundfile==0.13.1" "librosa==0.11.0" \
+        "sox>=1.4" "onnxruntime>=1.17"; \
+    "${py}" -m pip install --no-cache-dir --no-deps "qwen-tts==0.1.1"; \
+    if ! "${py}" -c "import torchaudio" >/dev/null 2>&1; then \
+        "${py}" -m pip install --no-cache-dir --no-deps "torchaudio==2.7.1"; \
+    fi; \
+    "${py}" -c "import librosa, soundfile, transformers; from qwen_tts import Qwen3TTSModel; print('model runtime ok')"; \
+    "${py}" -c "import boto3, httpx, jsonschema, runpod; print('worker deps ok')"

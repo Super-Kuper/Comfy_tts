@@ -4,6 +4,24 @@
 [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии —
 [SemVer](https://semver.org/lang/ru/).
 
+## [0.3.4] — 2026-11-17
+
+Предсобранный base-образ + тонкий Dockerfile.
+
+### Добавлено
+
+- `docker/Dockerfile.base` — тяжёлый слой (CUDA/PyTorch 2.7.1, `runpod`,
+  `transformers==4.57.3`, `qwen-tts==0.1.1`, `librosa`/`soundfile`) собирается
+  один раз и публикуется как `crappytackle/tts-serverless-base:0.3.4`.
+- `scripts/build-base.sh` — сборка и push базового образа.
+- Корневой `Dockerfile` теперь только `FROM crappytackle/tts-serverless-base:0.3.4`
+  + `COPY` кода; Hub-билд не устанавливает зависимости и не упирается в
+  30-минутный лимит.
+- Полный готовый образ воркера также публикуется как
+  `crappytackle/tts-serverless:0.3.4` — endpoint можно перевести на него
+  напрямую, без Hub-сборки.
+- Версия `0.3.4`; контракт, handler, движок и тесты не менялись.
+
 ## [0.3.3] — 2026-11-17
 
 Уменьшен образ: возвращена база `pytorch/pytorch`.
