@@ -1,0 +1,32 @@
+{
+  "input": {
+    "request_id": "5a1f0c2e-8b3d-4e6a-9c11-7d2f4b8a6e02",
+    "text": "Звон+ит [[pause:0.4]] телеф+он? Следов нет.",
+    "language": "ru",
+    "voice": {
+      "mode": "clone",
+      "reference": {
+        "url": "https://files.example/voice/reference-001.wav?X-Amz-Signature=example",
+        "sha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "text": "Проверка голоса для клонирования.",
+        "language": "ru"
+      }
+    },
+    "speed": 1.0,
+    "takes": 1,
+    "seed": null,
+    "window": {"start": 1.2, "end": 4.68},
+    "render": {"sample_rate": 48000, "channels": 2, "format": "wav"},
+    "aligner": {"enabled": true, "word_timestamps": true},
+    "prosody": {
+      "style_id": "confident",
+      "style_catalog_version": "voice-styles@2026-11-18",
+      "rate": 1.0,
+      "gain_db": 1.0,
+      "pitch_semitones": 0.0,
+      "sentence_pause_ms": 80,
+      "whisper": false
+    }
+  },
+  "policy": {"executionTimeout": 120000, "ttl": 3600000}
+}

@@ -14,13 +14,24 @@ job'е (``_load``), поэтому воркер и тесты запускают
 
 from __future__ import annotations
 
-import io
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Protocol
 
+from . import dsp
 from .errors import WorkerError
+from .prosody import ProsodyParams
 from .reference import ReferenceAudio
+
+# Алиасы с прежними именами: старые тесты подменяют ``engine._time_stretch`` и
+# т.п., а сами DSP-примитивы (ленивые numpy/librosa/soundfile) живут в dsp.py.
+_time_stretch = dsp.time_stretch
+_resample = dsp.resample
+_to_channels = dsp.to_channels
+_encode_wav = dsp.encode_wav
+_apply_gain = dsp.apply_gain
+_pitch_shift = dsp.pitch_shift
+_whisper_filter = dsp.whisper_filter
 
 ENGINE_ID = "qwen3_tts"
 
@@ -74,57 +85,16 @@ class TtsEngine(Protocol):
         sample_rate: int,
         channels: int,
         reference: ReferenceAudio | None = None,
+        prosody: ProsodyParams | None = None,
     ) -> list[SynthesisTake]:
         ...
 
 
 # --- Граница аудио-постобработки ---------------------------------------------
-# Отдельные функции с ленивыми импортами: тесты без numpy/librosa подменяют
-# их и проверяют порядок/параметры (speed → resample → channels → WAV PCM s16le).
-
-
-def _time_stretch(pcm: Any, *, rate: float) -> Any:
-    """Явная скорость автора (speed ≠ 1.0): ``librosa.effects.time_stretch``."""
-
-    import librosa
-
-    return librosa.effects.time_stretch(pcm, rate=float(rate))
-
-
-def _resample(pcm: Any, *, orig_sr: int, target_sr: int) -> Any:
-    """24 кГц native → ``render.sample_rate``."""
-
-    import librosa
-
-    return librosa.resample(pcm, orig_sr=int(orig_sr), target_sr=int(target_sr))
-
-
-def _to_channels(pcm: Any, *, channels: int) -> Any:
-    """Mono PCM → запрошенное число каналов (1/2 по контракту)."""
-
-    import numpy as np
-
-    data = np.asarray(pcm, dtype=np.float32)
-    if data.ndim == 1:
-        data = data[:, None]
-    if data.shape[1] == channels:
-        return data
-    if data.shape[1] == 1:
-        return np.repeat(data, channels, axis=1)
-    raise WorkerError(
-        "output_invalid",
-        f"каналы движка {data.shape[1]} не сводятся к запрошенным {channels}",
-    )
-
-
-def _encode_wav(pcm: Any, *, sample_rate: int) -> bytes:
-    """WAV PCM s16le (контракт §2: отдаётся только WAV)."""
-
-    import soundfile as sf
-
-    buffer = io.BytesIO()
-    sf.write(buffer, pcm, int(sample_rate), format="WAV", subtype="PCM_16")
-    return buffer.getvalue()
+# Примитивы DSP живут в ``tts_worker.dsp`` (ленивые numpy/librosa/soundfile), а
+# здесь — тонкие алиасы: старые тесты подменяют ``engine._time_stretch`` и т.п.,
+# поэтому ``_postprocess`` обращается к модульным именам, а не к ``dsp.*``.
+# Порядок: whisper → pitch → time_stretch (один) → resample → gain → channels → WAV.
 
 
 def _postprocess(
@@ -134,13 +104,30 @@ def _postprocess(
     target_rate: int,
     channels: int,
     speed: float,
+    gain_db: float = 0.0,
+    pitch_semitones: float = 0.0,
+    whisper: bool = False,
 ) -> bytes:
-    """Привести выход модели к контракту: скорость, частота, каналы, WAV s16le."""
+    """Привести выход модели к контракту: DSP-просодия, частота, каналы, WAV.
 
+    ``speed`` — **effective_rate** (уже ``input.speed × prosody.rate``, проверен
+    ``dsp.effective_rate``): один time_stretch, никакого atempo. ``gain_db``
+    применяется с пик-лимитером (клиппинга нет); ``whisper`` — экспериментальный
+    lowpass+gain; ``pitch_semitones`` — только при ненулевом значении.
+    """
+
+    if whisper:
+        pcm = _whisper_filter(pcm, sample_rate=int(source_rate))
+    if abs(float(pitch_semitones)) > 1e-9:
+        pcm = _pitch_shift(
+            pcm, sample_rate=int(source_rate), semitones=float(pitch_semitones)
+        )
     if abs(float(speed) - 1.0) > 1e-9:
         pcm = _time_stretch(pcm, rate=float(speed))
     if int(source_rate) != int(target_rate):
         pcm = _resample(pcm, orig_sr=int(source_rate), target_sr=int(target_rate))
+    if abs(float(gain_db)) > 1e-9:
+        pcm = _apply_gain(pcm, gain_db=float(gain_db))
     pcm = _to_channels(pcm, channels=int(channels))
     return _encode_wav(pcm, sample_rate=int(target_rate))
 
@@ -246,8 +233,15 @@ class Qwen3TtsEngine:
         sample_rate: int,
         channels: int,
         reference: ReferenceAudio | None = None,
+        prosody: ProsodyParams | None = None,
     ) -> list[SynthesisTake]:
-        """Синтезировать 1–2 дубля клонированным голосом; preset на Base — ошибка."""
+        """Синтезировать 1–2 дубля клонированным голосом; preset на Base — ошибка.
+
+        ``prosody`` (v1.2) — явные DSP-параметры уже разрешённого стиля. Effective
+        rate считается здесь (``speed × prosody.rate``, 0.5–2.0, иначе видимый
+        ``prosody_rate``) и применяется одним time_stretch; gain/whisper/pitch
+        уходят в ``_postprocess``. Без ``prosody`` поведение v1 не меняется.
+        """
 
         mode = str(voice.get("mode") or "") if isinstance(voice, Mapping) else ""
         if mode == "preset":
@@ -261,6 +255,20 @@ class Qwen3TtsEngine:
                 "voice_mode_unsupported",
                 f"voice.mode={mode!r}: Qwen3-TTS Base поддерживает только clone",
             )
+
+        # Effective rate проверяется до референса/загрузки модели: ошибка
+        # просодии не должна стоить ни сети, ни GPU (видимый prosody_rate).
+        if prosody is None:
+            effective_rate = float(speed)
+            gain_db = 0.0
+            pitch_semitones = 0.0
+            whisper = False
+        else:
+            effective_rate = dsp.effective_rate(speed, prosody.rate)
+            gain_db = float(prosody.gain_db)
+            pitch_semitones = float(prosody.pitch_semitones)
+            whisper = bool(prosody.whisper)
+
         if reference is None:
             raise WorkerError(
                 "reference_missing",
@@ -283,7 +291,10 @@ class Qwen3TtsEngine:
                 source_rate=source_rate,
                 target_rate=int(sample_rate),
                 channels=int(channels),
-                speed=float(speed),
+                speed=effective_rate,
+                gain_db=gain_db,
+                pitch_semitones=pitch_semitones,
+                whisper=whisper,
             )
             result.append(SynthesisTake(audio=audio, seed=seed))
         return result

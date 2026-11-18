@@ -11,6 +11,7 @@ import sys
 import pytest
 from helpers import (
     DATA,
+    REFERENCE_PCM,
     FakeAligner,
     FakeClock,
     FakeEngine,
@@ -18,7 +19,6 @@ from helpers import (
     FakeReferenceDecoder,
     FakeReferenceDownloader,
     FakeStorage,
-    REFERENCE_PCM,
     contract_dir,
     load_json,
     model_sha,
@@ -152,6 +152,25 @@ def test_success_returns_takes_words_and_execution_telemetry(setup) -> None:
     assert len(engine.calls) == 1
     assert len(aligner.calls) == 2
     assert aligner.calls[0]["language"] == "ru"
+    _output_validator().validate(result)
+
+
+def test_old_v1_input_has_additive_markup_telemetry(setup) -> None:
+    """v1.2 аддитивно: старый input без prosody получает факты разметки, но prosody."""
+
+    handler, engine, _aligner, normalizer = _handler(setup)
+    result = _run(handler(_job()))
+
+    telemetry = result["telemetry"]
+    assert telemetry["normalization"] == {
+        "version": normalizer("Швы затянуты. Следов нет.", "ru").version,
+        "applied": ["fake"],
+    }
+    assert telemetry["stress_marks"] == 0
+    assert telemetry["pauses"] == []
+    assert "prosody" not in telemetry
+    assert engine.calls[0]["prosody"] is None
+
     _output_validator().validate(result)
 
 

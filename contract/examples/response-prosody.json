@@ -1,0 +1,44 @@
+{
+  "request_id": "5a1f0c2e-8b3d-4e6a-9c11-7d2f4b8a6e02",
+  "takes": [
+    {
+      "take": 1,
+      "audio_b64": "UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAABErAAABAAgAZGF0YQUAAAB/v7+/",
+      "duration_seconds": 3.48,
+      "sample_rate": 48000,
+      "channels": 2,
+      "seed": null,
+      "words": [
+        {"text": "Звони́т", "start_ms": 40, "end_ms": 300},
+        {"text": "телефо́н", "start_ms": 1440, "end_ms": 1700},
+        {"text": "Следов", "start_ms": 2520, "end_ms": 2700},
+        {"text": "нет", "start_ms": 2760, "end_ms": 2900}
+      ],
+      "wer": 0.0
+    }
+  ],
+  "telemetry": {
+    "engine": "qwen3_tts",
+    "engine_version": "qwen3-tts-12hz-1.7b@2026-01",
+    "aligner_version": "gigaam-v3@2026-04",
+    "model_hash": "sha256:38fc7fc51c5e776e840414b6fd443962e9411b9654888fd7913e4da643cb857c",
+    "gpu_seconds": 2.4,
+    "license": "Apache-2.0",
+    "voice_mode": "clone",
+    "reference_hash": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+    "normalization": {
+      "version": "ru-normalization@2026-11-18",
+      "applied": ["pause:0.4", "stress:звонит", "stress:телефон"]
+    },
+    "stress_marks": 2,
+    "pauses": [0.4],
+    "prosody": {
+      "style_id": "confident",
+      "effective_rate": 1.0,
+      "gain_db": 1.0,
+      "pitch_semitones": 0.0,
+      "sentence_pause_ms": 80,
+      "whisper": false
+    }
+  }
+}

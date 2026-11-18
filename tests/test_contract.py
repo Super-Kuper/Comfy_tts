@@ -52,9 +52,16 @@ def test_request_clone_example_is_valid(input_validator: Draft202012Validator) -
     input_validator.validate(load_json(contract_dir() / "examples" / "request-clone.json"))
 
 
-@pytest.mark.parametrize("name", ["response.json", "response-url.json", "response-clone.json"])
+@pytest.mark.parametrize(
+    "name",
+    ["response.json", "response-url.json", "response-clone.json", "response-prosody.json"],
+)
 def test_output_examples_are_valid(output_validator: Draft202012Validator, name: str) -> None:
     output_validator.validate(load_json(contract_dir() / "examples" / name))
+
+
+def test_request_prosody_example_is_valid(input_validator: Draft202012Validator) -> None:
+    input_validator.validate(load_json(contract_dir() / "examples" / "request-prosody.json"))
 
 
 # --- Вход --------------------------------------------------------------------
@@ -192,6 +199,76 @@ def test_window_shape_is_tracing_only(input_validator: Draft202012Validator, win
 def test_window_is_optional(input_validator: Draft202012Validator) -> None:
     payload = _request_input()
     payload.pop("window")
+    input_validator.validate({"input": payload})
+
+
+def _prosody_block(**overrides: object) -> dict:
+    payload = {
+        "style_id": "confident",
+        "style_catalog_version": "voice-styles@2026-11-18",
+        "rate": 1.0,
+        "gain_db": 1.0,
+        "pitch_semitones": 0.0,
+        "sentence_pause_ms": 80,
+        "whisper": False,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_prosody_is_optional(input_validator: Draft202012Validator) -> None:
+    """v1.2 аддитивно: input без prosody — старый путь v1 (валиден)."""
+    payload = _request_input()
+    payload.pop("prosody", None)
+    input_validator.validate({"input": payload})
+
+
+def test_prosody_block_is_valid(input_validator: Draft202012Validator) -> None:
+    payload = _request_input()
+    payload["prosody"] = _prosody_block()
+    input_validator.validate({"input": payload})
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"extra": 1},
+        {"rate": 0.4},
+        {"rate": 2.1},
+        {"gain_db": -6.1},
+        {"gain_db": 6.1},
+        {"pitch_semitones": -2.1},
+        {"pitch_semitones": 2.1},
+        {"sentence_pause_ms": -1},
+        {"sentence_pause_ms": 501},
+        {"sentence_pause_ms": 80.5},
+        {"style_id": ""},
+        {"style_catalog_version": ""},
+        {"whisper": "yes"},
+        {"whisper": 0},
+    ],
+)
+def test_prosody_bad_values(input_validator: Draft202012Validator, patch: dict) -> None:
+    payload = _request_input()
+    payload["prosody"] = _prosody_block(**patch)
+    _assert_invalid(input_validator, {"input": payload})
+
+
+@pytest.mark.parametrize("missing", sorted(_prosody_block()))
+def test_prosody_requires_all_fields(
+    input_validator: Draft202012Validator, missing: str
+) -> None:
+    block = _prosody_block()
+    block.pop(missing)
+    payload = _request_input()
+    payload["prosody"] = block
+    _assert_invalid(input_validator, {"input": payload})
+
+
+def test_text_with_prosody_markup_is_valid(input_validator: Draft202012Validator) -> None:
+    """Разметка `+`/`[[pause]]` — часть текста, не отдельная схема."""
+    payload = _request_input()
+    payload["text"] = "Звон+ит [[pause:0.4]] телеф+он? Следов нет."
     input_validator.validate({"input": payload})
 
 
@@ -368,6 +445,106 @@ def test_aligner_version_may_be_null_when_disabled(output_validator: Draft202012
     take["words"] = []
     take["wer"] = None
     output_validator.validate(_output(takes=[take], telemetry=telemetry))
+
+
+VALID_NORMALIZATION = {
+    "version": "ru-normalization@2026-11-18",
+    "applied": ["pause:0.4", "stress:звонит"],
+}
+VALID_PROSODY_TELEMETRY = {
+    "style_id": "confident",
+    "effective_rate": 1.0,
+    "gain_db": 1.0,
+    "pitch_semitones": 0.0,
+    "sentence_pause_ms": 80,
+    "whisper": False,
+}
+
+
+def test_prosody_telemetry_is_additive(output_validator: Draft202012Validator) -> None:
+    """v1.2-телеметрия: normalization/stress_marks/pauses/prosody — аддитивно."""
+    telemetry = copy.deepcopy(VALID_TELEMETRY)
+    telemetry["normalization"] = copy.deepcopy(VALID_NORMALIZATION)
+    telemetry["stress_marks"] = 1
+    telemetry["pauses"] = [0.4, 0.25]
+    telemetry["prosody"] = copy.deepcopy(VALID_PROSODY_TELEMETRY)
+    output_validator.validate(_output(telemetry=telemetry))
+
+
+def test_prosody_telemetry_is_optional(output_validator: Draft202012Validator) -> None:
+    """Старый (v1) ответ без v1.2-полей остаётся валидным."""
+    output_validator.validate(_output())
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"effective_rate": 0.4},
+        {"effective_rate": 2.1},
+        {"gain_db": 7},
+        {"pitch_semitones": -2.1},
+        {"sentence_pause_ms": 501},
+        {"style_id": ""},
+        {"whisper": "yes"},
+        {"extra": 1},
+    ],
+)
+def test_prosody_telemetry_bad_values(
+    output_validator: Draft202012Validator, patch: dict
+) -> None:
+    prosody = copy.deepcopy(VALID_PROSODY_TELEMETRY)
+    prosody.update(patch)
+    telemetry = copy.deepcopy(VALID_TELEMETRY)
+    telemetry["prosody"] = prosody
+    _assert_invalid(output_validator, _output(telemetry=telemetry))
+
+
+@pytest.mark.parametrize("missing", sorted(VALID_PROSODY_TELEMETRY))
+def test_prosody_telemetry_required_fields(
+    output_validator: Draft202012Validator, missing: str
+) -> None:
+    prosody = copy.deepcopy(VALID_PROSODY_TELEMETRY)
+    prosody.pop(missing)
+    telemetry = copy.deepcopy(VALID_TELEMETRY)
+    telemetry["prosody"] = prosody
+    _assert_invalid(output_validator, _output(telemetry=telemetry))
+
+
+@pytest.mark.parametrize(
+    "normalization",
+    [
+        {"version": "x"},
+        {"applied": []},
+        {"version": "", "applied": []},
+        {"version": "x", "applied": [""]},
+        {"version": "x", "applied": [], "extra": 1},
+    ],
+)
+def test_normalization_telemetry_shape(
+    output_validator: Draft202012Validator, normalization: dict
+) -> None:
+    telemetry = copy.deepcopy(VALID_TELEMETRY)
+    telemetry["normalization"] = normalization
+    _assert_invalid(output_validator, _output(telemetry=telemetry))
+
+
+@pytest.mark.parametrize("pauses", [[0.01], [2.5], [0.1] * 7, "0.4"])
+def test_pauses_telemetry_shape(
+    output_validator: Draft202012Validator, pauses: object
+) -> None:
+    telemetry = copy.deepcopy(VALID_TELEMETRY)
+    telemetry["pauses"] = pauses
+    _assert_invalid(output_validator, _output(telemetry=telemetry))
+
+
+def test_stress_marks_telemetry_is_non_negative_int(output_validator: Draft202012Validator) -> None:
+    telemetry = copy.deepcopy(VALID_TELEMETRY)
+    telemetry["stress_marks"] = 0
+    output_validator.validate(_output(telemetry=telemetry))
+    for bad in (-1, 1.5, "2"):
+        telemetry = copy.deepcopy(VALID_TELEMETRY)
+        telemetry["stress_marks"] = bad
+        _assert_invalid(output_validator, _output(telemetry=telemetry))
 
 
 def test_unknown_output_field_is_rejected(output_validator: Draft202012Validator) -> None:

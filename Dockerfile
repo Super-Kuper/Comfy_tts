@@ -1,5 +1,5 @@
 # =============================================================================
-# TTS serverless worker — RunPod serverless (contract tts-serverless/v1).
+# TTS serverless worker — RunPod serverless (contract tts-serverless/v1.2).
 #
 # Base image is PREBUILT and published separately:
 #   crappytackle/tts-serverless-base:0.3.4
@@ -20,7 +20,7 @@ ARG BASE_IMAGE=crappytackle/tts-serverless-base:0.3.4
 
 FROM ${BASE_IMAGE}
 
-ARG TTS_WORKER_VERSION=0.3.5
+ARG TTS_WORKER_VERSION=0.4.0
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

@@ -2,13 +2,17 @@
 
 RunPod serverless worker for the video_gen **tts** stand (`tts` modality): it
 synthesizes one Russian phrase into 1–2 takes with the pinned **Qwen3-TTS 1.7B
-Base** model **cloned from an uploaded reference voice**, aligns the takes with
-**GigaAM-v3** (word timestamps + WER) and returns audio plus execution-fact
-telemetry. It does not choose a model (the model is the image/volume), ships no
-weights and has no external AI APIs at runtime. Contract:
-**`tts-serverless/v1`** (worker **0.3.0**, cloning is additive) —
+Base** model **cloned from an uploaded reference voice**, applies explicit
+**DSP-only prosody** (author `+`/`[[pause]]` markup and rate/gain/sentence
+pause/whisper numbers resolved by the service — no instruct/emotional styles),
+aligns the takes with **GigaAM-v3** (word timestamps + WER) and returns audio
+plus execution-fact telemetry. It does not choose a model or a style (the model
+is the image/volume; the style is resolved by the service), ships no weights and
+has no external AI APIs at runtime. Contract: **`tts-serverless/v1.2`** (worker
+**0.4.0**, additive `prosody`/markup + telemetry) —
 [`contract/worker-contract.md`](contract/worker-contract.md).
-Platform plan: `docs/tasks/2026-11-16-audio-sfx-tts.md` §4.1/§7.2 in the
+Platform plans: `docs/tasks/2026-11-16-audio-sfx-tts.md` §4.1/§7.2 and
+`docs/tasks/2026-11-18-voice-prosody.md` (variant A: Base + DSP) in the
 `video_gen` repository (separate repository: `/tts-serverless/` is in the parent
 `.gitignore`).
 
@@ -42,8 +46,8 @@ engine (contract §1.1), no routing in a single worker and no silent fallback.
    does `FROM` it and `COPY` the worker code. This keeps Hub builds inside the
    30-minute `docker build` limit:
    ```bash
-   docker build -t crappytackle/tts-serverless:0.3.4 .
-   docker push crappytackle/tts-serverless:0.3.4
+   docker build -t crappytackle/tts-serverless:0.4.0 .
+   docker push crappytackle/tts-serverless:0.4.0
    ```
    Rebuild/push the base only when dependencies change:
    ```bash
@@ -53,7 +57,7 @@ engine (contract §1.1), no routing in a single worker and no silent fallback.
    (CUDA/PyTorch 2.7.1, `qwen-tts==0.1.1`, `transformers==4.57.3`,
    `soundfile`, `librosa`). No model weights are baked into the image — they
    stay on the network volume. A ready-to-use worker image is also published
-   as `crappytackle/tts-serverless:0.3.4`; an endpoint can point at it directly,
+   as `crappytackle/tts-serverless:0.4.0`; an endpoint can point at it directly,
    bypassing Hub builds.
 4. **Publish on RunPod Hub (optional).** The Hub listing metadata is
    [`.runpod/hub.json`](.runpod/hub.json) (40 GB container disk; GPU pools
@@ -92,7 +96,16 @@ engine (contract §1.1), no routing in a single worker and no silent fallback.
     "seed": null,
     "window": {"start": 1.2, "end": 3.4},
     "render": {"sample_rate": 48000, "channels": 2, "format": "wav"},
-    "aligner": {"enabled": true, "word_timestamps": true}
+    "aligner": {"enabled": true, "word_timestamps": true},
+    "prosody": {
+      "style_id": "confident",
+      "style_catalog_version": "voice-styles@2026-11-18",
+      "rate": 1.0,
+      "gain_db": 1.0,
+      "pitch_semitones": 0.0,
+      "sentence_pause_ms": 80,
+      "whisper": false
+    }
   },
   "policy": {"executionTimeout": 120000, "ttl": 3600000}
 }
@@ -101,12 +114,13 @@ engine (contract §1.1), no routing in a single worker and no silent fallback.
 | Field | Description |
 |---|---|
 | `request_id` | Phrase request UUID; echoed in the output. |
-| `text` | Phrase text; normalized inside the worker with the versioned dictionaries in [`data/normalization.ru.json`](data/normalization.ru.json) (numbers, abbreviations, brands, stress). |
+| `text` | Phrase text; normalized inside the worker with the versioned dictionaries in [`data/normalization.ru.json`](data/normalization.ru.json) (numbers, abbreviations, brands, dictionary stress). v1.2 author markup: `+` before a stressed Cyrillic vowel (`звон+ит`), `[[pause:<seconds>]]`; the `[[style:<id>]]` tag is stripped by the service. |
 | `voice` | `oneOf`: `clone` `{mode, reference: {url, sha256, text, language}}` (executable on the Base image) or `preset` `{mode, speaker_id}` (compatibility shape; **unsupported** on Base — visible `voice_mode_unsupported`, no fallback). |
 | `speed`, `takes`, `seed` | Synthesis parameters; 1–2 takes per phrase (plan §7.2). |
 | `window` | Phrase window. **Tracing only** — the worker does not fit/stretch audio to the window; overflow is a service-side decision. |
 | `render` | Requested `sample_rate`/`channels`/`wav`. |
 | `aligner` | `{enabled, word_timestamps}`; disabled → `words=[]`, `wer=null`. |
+| `prosody` | Optional v1.2 block of explicit DSP parameters resolved by the service from the DSP-only catalog: `style_id`, `style_catalog_version`, `rate` 0.5–2.0, `gain_db` −6…+6, `pitch_semitones` −2…+2, `sentence_pause_ms` 0–500, `whisper`. Absent → old v1 path; execution facts are echoed in `telemetry.prosody`. |
 | `policy` | Optional RunPod policy; the worker does not read it. |
 
 ### Reference voice (cloning)
@@ -133,12 +147,48 @@ falls back to a preset voice.
 Result: `request_id` echo, 1–2 takes (each with exactly one of `audio_b64` /
 `audio_url`, WAV facts, `seed`, GigaAM `words`, `wer`) and telemetry
 (`engine`, `engine_version`, `aligner_version`, `model_hash`, `gpu_seconds`,
-`license`, plus additive `voice_mode` and `reference_hash`). Empty/broken audio,
-a different take count or a missing fact is an error, never a success. On the
-pinned Base image `voice.mode=preset` fails visibly with
-`voice_mode_unsupported`. Full details and error codes:
+`license`, plus additive `voice_mode` and `reference_hash`, and the v1.2 facts
+`normalization {version, applied}`, `stress_marks`, `pauses`, and `prosody` when
+the input carried it). Empty/broken audio, a different take count or a missing
+fact is an error, never a success. On the pinned Base image `voice.mode=preset`
+fails visibly with `voice_mode_unsupported`. Full details and error codes:
 [contract](contract/worker-contract.md). Examples:
-[`contract/examples/`](contract/examples/).
+[`contract/examples/`](contract/examples/) (v1.2:
+[`request-prosody.json`](contract/examples/request-prosody.json) /
+[`response-prosody.json`](contract/examples/response-prosody.json)).
+
+## Prosody (v1.2, DSP-only)
+
+Variant A keeps Qwen3-TTS Base voice cloning and adds **deterministic**
+pre/post-processing instead of instruct/emotional styles. The service resolves
+the author's `[[style:<id>]]` tag against the DSP-only catalog
+(`voice-styles@2026-11-18`) and sends explicit numbers in `input.prosody`; the
+worker executes them and never chooses a style. Emotional/instruct tags are not
+in the registry — the service rejects them with `style_unknown` before a job.
+
+**Author markup in `text`:**
+
+- `+` immediately before the stressed Cyrillic vowel (`звон+ит`, `зам+ок`,
+  `+это`) → U+0301 after the vowel (`звони́т`). One mark per word, `+ё` and
+  `+` not before a vowel are `stress_invalid`; `+` outside a Cyrillic word
+  (`C++`, `5+5`, `a+b`) stays literal. An explicit mark wins over the
+  dictionary and is protected from replacement. Base follows U+0301 only
+  partially (external ~21% measurement) — it is a priority hint, not a
+  guarantee; `stress_marks`/`normalization` are the honest facts.
+- `[[pause:<seconds>]]` (0.05–2.0, step 0.05, ≤ 6 per phrase, total ≤ 6 s)
+  splits the phrase into segments; each is synthesized with the same
+  voice/reference/takes/seed and joined with **exact** silence. GigaAM words are
+  measured per segment and shifted by the actual segment durations+pauses;
+  aggregate WER is the word-weighted mean. Bad position/step/limits are
+  `pause_invalid`; markers are never stripped silently.
+
+**DSP parameters:** effective rate = `speed × prosody.rate`, bounded 0.5–2.0
+(else `prosody_rate`) and applied as **one** `librosa.effects.time_stretch`
+(no auto-atempo); `gain_db` −6…+6 with a peak limiter (no clipping; actual gain
+may be lower for loud takes); `sentence_pause_ms` 0–500 inserts exact silence
+after `. ! ? …` during segmentation; `whisper` is an experimental FIR lowpass
++gain; `pitch_semitones` is applied only when non-zero (0 in variant A). No
+output is ever fitted/stretched to the phrase window.
 
 ## Health
 
@@ -182,16 +232,24 @@ timeout) are contract constants, not endpoint settings.
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m pytest   # 0 GPU, no network, no runpod, no torch
 ```
 
-The suite covers the contract schemas and examples (preset and clone shapes),
-handler happy path (takes, WAV facts, GigaAM words/WER from a mock aligner),
-clone reference download/hash/size/duration failures with fake
+The suite covers the contract schemas and examples (preset, clone and v1.2
+prosody shapes), handler happy path (takes, WAV facts, GigaAM words/WER from a
+mock aligner), clone reference download/hash/size/duration failures with fake
 downloader/decoder, preset-on-Base `voice_mode_unsupported`, engine takes and
 target-rate control flow with injected fakes, empty result and broken audio
 errors, "the worker does not choose a model" (strict input schema + engine from
 the image), normalization, window non-fitting, aligner-disabled semantics and
 the pinned model manifest. Health statuses (volume and pinned-file presence, no
-synthesis) are covered too. Local test deps: `pytest`, `jsonschema`, `httpx`
-(see `pyproject.toml`).
+synthesis) are covered too.
+
+`tests/test_prosody.py` covers v1.2 without GPU/numpy/librosa: `+` stress
+parsing (incl. `ё`/literal `+`/dictionary priority), `[[pause]]`
+segments/limits/errors, sentence pauses, exact segment joining
+(stdlib `wave`), word offsets and word-weighted WER, DSP ranges/effective
+rate/peak-limited gain/whisper kernel (pure math), engine `_postprocess`
+wiring with monkeypatched lazy functions, and handler telemetry/error-before-
+synthesis. Local test deps: `pytest`, `jsonschema`, `httpx` (see
+`pyproject.toml`).
 
 `.runpod/` holds the RunPod Hub listing (`hub.json`) and the build test (`tests.json`).
 
@@ -213,7 +271,11 @@ synthesis) are covered too. Local test deps: `pytest`, `jsonschema`, `httpx`
    `shared/seeds/tts_dictionaries.json`. Export one pinned version from that
    source into the image and put its hash into the service snapshot.
 5. **Measure** WER/latency/GPU seconds per phrase on the stand, cold/warm start,
-   and the RU quality pilot against the voice catalog (plan §11).
+   the RU quality pilot against the voice catalog (plan §11) and the prosody
+   pilot (`docs/tasks/2026-11-18-voice-prosody.md` §11): pause accuracy ±20 ms,
+   rate ±2%, gain ±0.5 dB/no clipping, the share of phrases where Base follows
+   `+` (a fact to record, not a 100% promise), and listen verdicts for the DSP
+   styles. Until this runs, the DSP path is covered by fakes/tests only.
 6. **Service wiring:** phrase jobs (`kind='audio'`, `mode='tts'`), cloning
    snapshot (`voice_mode`/`voice_reference` + content_hash), presigned reference
    URL with TTL ≥ queue TTL, telemetry check (`voice_mode`/`reference_hash`),

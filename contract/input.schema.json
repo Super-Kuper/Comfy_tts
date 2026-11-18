@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.invalid/tts-serverless/input.schema.json",
-  "title": "TTS serverless worker input (tts-serverless/v1)",
-  "description": "RunPod serverless input: one Russian phrase, voice/parameter snapshot and render/aligner settings. The worker loads the pinned Qwen3-TTS 1.7B Base model from its own image/volume and never receives a model choice. Voice is either a clone reference (url/sha256/text/language) or the additive-compatible preset shape (unsupported on Base).",
+  "title": "TTS serverless worker input (tts-serverless/v1.2)",
+  "description": "RunPod serverless input (contract tts-serverless/v1.2, worker 0.4.0): one Russian phrase, voice/parameter snapshot and render/aligner settings. The worker loads the pinned Qwen3-TTS 1.7B Base model from its own image/volume and never receives a model choice. Voice is either a clone reference (url/sha256/text/language) or the additive-compatible preset shape (unsupported on Base). Optional `prosody` carries the explicit DSP parameters of a style already resolved by the service (no instruct/emotional styles in variant A). `text` may carry author markup: `+` before a Cyrillic stressed vowel and `[[pause:<seconds>]]` markers; the `[[style:<id>]]` tag is stripped by the service and is not part of this contract.",
   "type": "object",
   "required": [
     "input"
@@ -27,7 +27,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 1000,
-          "description": "Phrase text. Normalization (numbers, abbreviations, brands, stress — data dictionaries) happens inside the worker (contract §1.2)."
+          "description": "Phrase text (1–1000 chars). Normalization (numbers, abbreviations, brands, dictionary stress — data dictionaries) happens inside the worker (contract §1.2). v1.2 author markup: `+` immediately before a Cyrillic stressed vowel is converted to a combining acute (U+0301) after the vowel; `[[pause:<seconds>]]` (0.05–2.0, step 0.05, ≤6 per phrase, total ≤6 s) splits the phrase into segments with exact silence. Neither marker is silently stripped: invalid markup fails visibly (`stress_invalid`/`pause_invalid`). The `[[style:<id>]]` tag is removed by the service before the job."
         },
         "language": {
           "type": "string",
@@ -204,6 +204,60 @@
           },
           "additionalProperties": false,
           "description": "Optional; defaults are {\"enabled\": true, \"word_timestamps\": true}."
+        },
+        "prosody": {
+          "type": "object",
+          "description": "v1.2 (optional; absent = old v1 path): explicit deterministic DSP parameters of the author's style, resolved by the service from the DSP-only catalog (shared/seeds/voice_styles.json, catalog version voice-styles@2026-11-18). The worker executes these numbers and does not choose or resolve a style. Emotional/instruct styles are not part of variant A and are rejected by the service (`style_unknown`) before the job; an old worker image rejects `prosody` as an unknown field, so the service gates on capabilities.prosody (`prosody_unsupported`) instead of sending it.",
+          "required": [
+            "style_id",
+            "style_catalog_version",
+            "rate",
+            "gain_db",
+            "pitch_semitones",
+            "sentence_pause_ms",
+            "whisper"
+          ],
+          "properties": {
+            "style_id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Canonical catalog style id (e.g. confident); echo of the resolved style, not a worker choice."
+            },
+            "style_catalog_version": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Version of the style catalog data the service used (e.g. voice-styles@2026-11-18)."
+            },
+            "rate": {
+              "type": "number",
+              "minimum": 0.5,
+              "maximum": 2.0,
+              "description": "Style speech-rate factor; effective rate = input.speed × rate, must stay 0.5–2.0 (`prosody_rate`)."
+            },
+            "gain_db": {
+              "type": "number",
+              "minimum": -6,
+              "maximum": 6,
+              "description": "Gain in dB applied with a peak limiter (no clipping; the limiter may reduce the actual gain)."
+            },
+            "pitch_semitones": {
+              "type": "number",
+              "minimum": -2,
+              "maximum": 2,
+              "description": "Bounded pitch shift; applied only when non-zero (DSP-only registry uses 0 in variant A)."
+            },
+            "sentence_pause_ms": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 500,
+              "description": "Silence inserted after sentence-ending punctuation (`.!?…`) during segmentation; 0 disables."
+            },
+            "whisper": {
+              "type": "boolean",
+              "description": "Experimental whisper DSP (lowpass + gain); marked experimental in the catalog/UI."
+            }
+          },
+          "additionalProperties": false
         }
       },
       "allOf": [

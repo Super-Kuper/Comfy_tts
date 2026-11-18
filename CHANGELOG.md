@@ -4,6 +4,75 @@
 [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии —
 [SemVer](https://semver.org/lang/ru/).
 
+## [0.4.0] — 2026-11-18
+
+Просодия варианта A: авторская разметка `+`/`[[pause]]` и DSP-only стили.
+Контракт `tts-serverless/v1` → аддитивно `v1.2`; старый input без `prosody` и
+без разметки работает как раньше.
+
+### Добавлено
+
+- **Контракт v1.2** (`contract/`): необязательный `input.prosody`
+  `{style_id, style_catalog_version, rate 0.5–2.0, gain_db −6…+6,
+  pitch_semitones −2…+2, sentence_pause_ms 0–500, whisper}` — строгий объект,
+  который сервис собирает из DSP-only каталога (`voice-styles@2026-11-18`);
+  воркер стиль не выбирает и эмоциональные/instruct-стили не поддерживает
+  (вне варианта A). Схемы входа/выхода, примеры
+  `request-prosody.json`/`response-prosody.json`, `worker-contract.md` §1.5/
+  §1.6/§2.2/§4/§6 обновлены; версия контракта `tts-serverless/v1.2`.
+- **Авторское ударение:** `+` непосредственно перед ударной кириллической
+  гласной → U+0301 после гласной (`звон+ит` → `звони́т`); одна метка на слово,
+  `+ё`/`+` не перед гласной/вторая метка — видимый `stress_invalid`; `+` вне
+  кириллического слова (`C++`, `5+5`, `a+b`) остаётся литералом; явная метка
+  приоритетнее словаря и защищена от его замены. Факты:
+  `telemetry.stress_marks`, `normalization.applied` (`stress:<word>`).
+- **Авторские паузы:** `[[pause:<секунды>]]` (0.05–2.0, шаг 0.05, ≤6 на фразу,
+  суммарно ≤6 с, не в начале/конце и не подряд) режут фразу на сегменты; каждый
+  синтезируется тем же голосом/референсом/дублями/seed, дубль #i склеивается с
+  **точной** тишиной (round(pause × sample_rate) кадров). Слова GigaAM —
+  по сегментам со смещением на фактические длительности+паузы; WER склейки —
+  взвешенное по числу слов среднее. Ошибки — видимый `pause_invalid`; метки не
+  срезаются молча. `sentence_pause_ms` вставляет ту же точную тишину после
+  `. ! ? …` на этапе сегментации.
+- **DSP** (`src/tts_worker/dsp.py`, новые примитивы с ленивыми
+  numpy/librosa/soundfile): effective rate = `speed × prosody.rate` в 0.5–2.0
+  (иначе видимый `prosody_rate`) — **один** `time_stretch`, без авто-atempo;
+  gain −6…+6 dB с пик-лимитером (пик ≤ 0.999 FS, клиппинга нет); bounded
+  pitch shift только при ненулевом значении (в каталоге A — 0); экспериментальный
+  whisper — FIR lowpass ~3.5 кГц + gain. Склейка сегментов — stdlib `wave`,
+  поэтому тесты идут без numpy/librosa.
+- **Телеметрия** (аддитивно): `normalization {version, applied[]}`,
+  `stress_marks`, `pauses[]`, `prosody {style_id, effective_rate, gain_db,
+  pitch_semitones, sentence_pause_ms, whisper}` (последнее — только когда input
+  `prosody` был). `normalization.version = ru-normalization@2026-11-18`.
+- **Новые коды ошибок:** `prosody_invalid`, `prosody_rate`, `stress_invalid`,
+  `pause_invalid`.
+- **Нормализатор:** `NormalizationResult.stress_marks`; метки пауз защищены от
+  правил чисел/словаря; версия данных `ru-normalization@2026-11-18` (содержимое
+  словарей не менялось — уточнена заметка, что разметка это код воркера).
+- **Тесты:** `tests/test_prosody.py` (нормализатор/ударения, паузы и лимиты,
+  паузы предложений, точная склейка, смещение слов/взвешенный WER, DSP
+  effective rate/gain/whisper/порядок `_postprocess`, engine+handler
+  интеграция, телеметрия, ошибки до синтеза), обновлены
+  `tests/test_contract.py` и `tests/test_handler.py`; v1.2-примеры валидны.
+  GPU-free: движок/аллайнер — инъекции, DSP-функции подменяются.
+- Версия воркера **0.4.0** (`pyproject.toml`, `__init__.__version__`,
+  `Dockerfile`, Hub-метаданные); README — раздел Prosody, таблица полей и
+  телеметрии.
+
+### Не менялось
+
+- Qwen3-TTS Base + клонирование, GigaAM-v3, preset-on-Base
+  `voice_mode_unsupported`, `voice_mode`/`reference_hash`, лимиты референса,
+  доставка base64/URL, pinned-манифест и база образа `0.3.4`. Окно фразы
+  по-прежнему только трассировка, авто-подгонки/atempo нет.
+
+### Проверка
+
+`pytest` — 365 passed без GPU/сети/torch/numpy/librosa; `ruff check src tests`
+— чисто. Живой пилот просодии (точность пауз/rate/gain, следование U+0301,
+листен стилей) остаётся внешним GPU-этапом.
+
 ## [0.3.5] — 2026-11-17
 
 Hub-тест: GPU с фактическим стоком (A100 SXM 80GB).

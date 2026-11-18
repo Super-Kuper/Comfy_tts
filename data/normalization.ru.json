@@ -1,7 +1,7 @@
 {
-  "version": "ru-normalization@2026-11-16",
+  "version": "ru-normalization@2026-11-18",
   "language": "ru",
-  "note": "Pinned baseline of the Russian TTS normalization dictionaries. Data, not code: fix a rule by creating a new version of this file (the worker image pins the file). The production dictionary set is the platform data catalogue (docs/tasks/2026-11-16-audio-sfx-tts.md §10); this file is the worker-side baseline until the single-source-of-truth export lands. Gender/number agreement for numerals (один/одна) is intentionally not guessed: uncovered forms stay as written and are visible to QC.",
+  "note": "Pinned baseline of the Russian TTS normalization dictionaries. Data, not code: fix a rule by creating a new version of this file (the worker image pins the file). Author prosody markup is code, not data: stress marks (`+` before a Cyrillic stressed vowel -> U+0301 after the vowel) and pause markers (`[[pause:<seconds>]]`) are parsed by worker 0.4.0; the regexes/lists below only describe abbreviations, brands, numbers and the dictionary stress baseline. Explicit author stress wins over the dictionary entry and is protected from replacement. Gender/number agreement for numerals (один/одна) is intentionally not guessed: uncovered forms stay as written and are visible to QC.",
   "abbreviations": {
     "т.д.": "так далее",
     "т.п.": "тому подобное",

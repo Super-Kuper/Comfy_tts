@@ -8,7 +8,7 @@ the ``tts_worker`` package importable (``PYTHONPATH`` is already set in the
 image, the ``sys.path`` line covers a plain repository checkout) and starts the
 RunPod serverless loop.
 
-Job contract: ``contract/worker-contract.md`` (``tts-serverless/v1``).
+Job contract: ``contract/worker-contract.md`` (``tts-serverless/v1.2``).
 """
 
 from __future__ import annotations

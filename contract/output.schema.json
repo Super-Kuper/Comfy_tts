@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.invalid/tts-serverless/output.schema.json",
-  "title": "TTS serverless worker output (tts-serverless/v1)",
-  "description": "Result of one phrase job: 1–2 takes (each with exactly one of audio_b64/audio_url), GigaAM word timestamps/WER and execution-fact telemetry, including the executed voice_mode and (for cloning) the verified reference_hash.",
+  "title": "TTS serverless worker output (tts-serverless/v1.2)",
+  "description": "Result of one phrase job (contract tts-serverless/v1.2, worker 0.4.0): 1–2 takes (each with exactly one of audio_b64/audio_url), GigaAM word timestamps/WER and execution-fact telemetry. Additive v1.2 telemetry: normalization {version, applied}, stress_marks, pauses, and prosody {style_id, effective_rate, gain_db, pitch_semitones, sentence_pause_ms, whisper} when the input carried prosody. Existing voice_mode/reference_hash facts are unchanged.",
   "type": "object",
   "required": [
     "request_id",
@@ -201,6 +201,93 @@
           ],
           "pattern": "^[0-9a-f]{64}$",
           "description": "Verified sha256 of the cloned voice reference (raw lowercase hex, same form as input.voice.reference.sha256 / media content_hash); null for preset mode."
+        },
+        "normalization": {
+          "type": "object",
+          "description": "v1.2 fact: the pinned normalization data version and applied rules (incl. stress:<word>/pause:<seconds>).",
+          "required": [
+            "version",
+            "applied"
+          ],
+          "properties": {
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Version string from the pinned dictionary file (e.g. ru-normalization@2026-11-18)."
+            },
+            "applied": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "Applied rules in report order: abbreviation:*, brand:*, number:*, pause:<seconds>, stress:<word>."
+            }
+          },
+          "additionalProperties": false
+        },
+        "stress_marks": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "v1.2 fact: number of author `+` stress marks converted to U+0301."
+        },
+        "pauses": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "number",
+            "minimum": 0.05,
+            "maximum": 2.0
+          },
+          "description": "v1.2 fact: author `[[pause:<seconds>]]` values in text order (sentence pauses are reported via prosody.sentence_pause_ms; total ≤6 s)."
+        },
+        "prosody": {
+          "type": "object",
+          "description": "v1.2 fact: executed DSP prosody (present only when input.prosody was sent); effective_rate is input.speed × prosody.rate.",
+          "required": [
+            "style_id",
+            "effective_rate",
+            "gain_db",
+            "pitch_semitones",
+            "sentence_pause_ms",
+            "whisper"
+          ],
+          "properties": {
+            "style_id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Echo of the resolved catalog style id."
+            },
+            "effective_rate": {
+              "type": "number",
+              "minimum": 0.5,
+              "maximum": 2.0,
+              "description": "Executed time-stretch factor = input.speed × prosody.rate; one time_stretch, no auto-atempo."
+            },
+            "gain_db": {
+              "type": "number",
+              "minimum": -6,
+              "maximum": 6,
+              "description": "Requested DSP gain in dB (the peak limiter may apply less to avoid clipping)."
+            },
+            "pitch_semitones": {
+              "type": "number",
+              "minimum": -2,
+              "maximum": 2,
+              "description": "Requested DSP pitch shift; 0 in variant A."
+            },
+            "sentence_pause_ms": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 500,
+              "description": "Sentence-pause parameter used during segmentation."
+            },
+            "whisper": {
+              "type": "boolean",
+              "description": "Whether the experimental whisper DSP ran."
+            }
+          },
+          "additionalProperties": false
         }
       },
       "allOf": [
